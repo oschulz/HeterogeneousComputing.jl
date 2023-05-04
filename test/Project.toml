@@ -1,0 +1,12 @@
+[deps]
+Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
+Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
+ArraysOfArrays = "65a8f2f4-9b39-5baf-92e2-a9cc46fdf018"
+Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
+FillArrays = "1a297f60-69ca-5386-bcde-b61e274b549b"
+KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
+StructArrays = "09ab397b-f2b6-538f-b94a-2f83cf4a842a"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[compat]
+Documenter = "~0.27"
