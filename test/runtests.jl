@@ -5,6 +5,7 @@ import Test
 Test.@testset "Package HeterogeneousComputing" begin
     # include("test_aqua.jl")
     include("test_compute_unit.jl")
+    include("test_gen_context.jl")
     include("test_docs.jl")
     isempty(Test.detect_ambiguities(HeterogeneousComputing))
 end # testset

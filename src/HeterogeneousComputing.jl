@@ -7,9 +7,12 @@ Tools for heterogeneous computing in Julia.
 """
 module HeterogeneousComputing
 
+using Random
+
 import Adapt
 
 include("compute_unit.jl")
+include("gen_context.jl")
 
 @static if !isdefined(Base, :get_extension)
     using Requires

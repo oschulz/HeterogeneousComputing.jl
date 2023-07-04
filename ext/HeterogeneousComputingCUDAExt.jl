@@ -56,6 +56,18 @@ function Adapt.adapt_storage(cunit::CUDAUnit, x)
 end
 
 
+function HeterogeneousComputing.allocate_array(cunit::CUDAUnit, ::Type{T}, dims::Dims) where T
+    oldhandle = CUDA.device().handle
+    try
+        oldhandle != cunit.devhandle && CUDA.device!(cunit.devhandle)
+        CUDA.CuArray{T}(undef, dims)
+    finally
+        oldhandle != cunit.devhandle && CUDA.device!(oldhandle)
+    end
+end
+
+
+
 # Requires KernelAbstractions v0.9 and CUDA v4:
 @static if isdefined(CUDA, :CUDABackend)
     ka_backend(::CUDAUnit) = CUDA.CUDABackend()

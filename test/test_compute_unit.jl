@@ -38,6 +38,12 @@ end
         @test @inferred(get_free_memory(cunit)) isa Integer
         @test 0 <= get_free_memory(cunit) <= get_total_memory(cunit)
 
+        AT2 = typeof(adapt(cunit, Array{Float32,2}(undef, 4, 5)))
+        @test typeof(@inferred(allocate_array(cunit, Float32, (4, 5)))) == AT2
+        @test typeof(@inferred(allocate_array(cunit, Float32, 4, 5))) == AT2
+        @test size(allocate_array(cunit, Float32, (4, 5))) == (4, 5)
+        @test size(allocate_array(cunit, Float32, 4, 5)) == (4, 5)
+    
         @test @inferred(_KA_Backend(cunit)) isa _KA_Backend
         @test @inferred(convert(_KA_Backend, cunit)) isa _KA_Backend
     end

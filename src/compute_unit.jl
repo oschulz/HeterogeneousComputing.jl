@@ -6,10 +6,19 @@
 
 Supertype for arbitrary compute units (CPU, GPU, etc.).
 
-`adapt(dev::AbstractComputeUnit, x)` adapts `x` for `dev`.
+`adapt(cunit::AbstractComputeUnit, x)` adapts `x` for `cunit`.
 
-`Sys.total_memory(dev)` and `Sys.free_memory(dev)` return the total and free
-memory on the unit.
+`get_total_memory(cunit)` and `get_free_memory(cunit)` return the total
+resp. the free memory on the compute unit.
+
+[`allocate_array(cunit, dims)`](@ref) can be used to allocate new arrays
+on `cunit`.
+
+`KernelAbstractions.Backend(cunit)` will return default
+[KernelAbstractions](https://github.com/JuliaGPU/KernelAbstractions.jl)
+backend for the type of the compute unit.
+
+See also [`GenContext`](@ref).
 """
 abstract type AbstractComputeUnit end
 export AbstractComputeUnit
@@ -38,13 +47,12 @@ export get_free_memory
 
 Returns the KernelAbstractions backend for `cunit`.
 
-
-Requires KernelAbstractions.jl to be loaded, otherwise ka_backend
-will have no method.
+Requires KernelAbstractions.jl to be loaded, otherwise `ka_backend`
+will have no methods.
 
 Do not call directly, use for specialization only.
 
-User code should call `KernelAbstractions.Backend(cunit))` or
+User code should call `KernelAbstractions.Backend(cunit)` or
 `convert(KernelAbstractions.Backend, cunit)` instead, both of which
 will use `ka_backend` internally.
 """
@@ -210,3 +218,20 @@ Supertype for GPU comute units.
 """
 abstract type AbstractGPUnit <: AbstractComputeAccelerator end
 export AbstractGPUnit
+
+
+"""
+    allocate_array(cpunit::AbstractComputeUnit, ::Type{T}, dims::Dims)
+    allocate_array(cpunit::AbstractComputeUnit, ::Type{T}, dims::Integer...)
+
+Allocate a new array with element type `T` and size `dims` on compute unit
+`cunit`.
+
+The content of the newly allocated array is undefined.
+"""
+function allocate_array end
+export allocate_array
+
+allocate_array(cpunit::AbstractComputeUnit, ::Type{T}, dims::Integer...) where T = allocate_array(cpunit, T, dims)
+
+allocate_array(::CPUnit, ::Type{T}, dims::Dims) where T = Array{T}(undef, dims)
