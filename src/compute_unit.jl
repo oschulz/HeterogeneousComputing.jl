@@ -149,6 +149,7 @@ function get_compute_unit end
 export get_compute_unit
 
 get_compute_unit(x) = get_compute_unit_impl(Union{}, x)
+get_compute_unit(cunit::AbstractComputeUnit) = cunit
 
 
 """

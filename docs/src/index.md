@@ -36,8 +36,9 @@ gpu_data = adapt(gpu_unit, cpu_data)
 gpu_ctx = GenContext{Float32}(gpu_unit)
 
 # Generate a new data column on the GPU and add it to the data. A context
-# is also an `AbstractRNG`, so we can generate random data of the desired
-# numerical precision on the chosed unit very conventiently:
+# can also be used directly for random number generation, so we can
+# generate random data of the desired numerical precision on the desired
+# compute unit very conventiently:
 
 c = rand!(allocate_array(gpu_ctx, 1000))
 d = rand(gpu_ctx, 1000)

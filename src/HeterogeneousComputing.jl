@@ -11,6 +11,8 @@ using Random
 
 import Adapt
 
+include("precision.jl")
+include("rng.jl")
 include("compute_unit.jl")
 include("gen_context.jl")
 
