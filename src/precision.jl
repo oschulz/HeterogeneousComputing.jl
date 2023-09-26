@@ -18,7 +18,7 @@ Base.typejoin(::Type{<:NoPrecision{T}}, ::Type{<:NoPrecision}) where T = NoPreci
         Type{<:HeterogeneousComputing.NoPrecision}
     }
 
-Returns the numberical precision of used by `x` or [`NoPrecision{T}`](@ref)
+Returns the numerical precision of used by `x` or [`NoPrecision{T}`](@ref)
 if no numerical precision can be determined for `x`.
 
 In general, do not specialize `get_precision`, specialize
