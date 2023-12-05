@@ -109,3 +109,36 @@ The default element type can be overriden by specifying `T`.
 @inline allocate_array(ctx::GenContext, dims::Integer...) = allocate_array(ctx, dims)
 @inline allocate_array(ctx::GenContext, ::Type{T}, args...) where T = allocate_array(ctx.cunit, T, args...)
 @inline allocate_array(ctx::GenContext, ::Type{T}, dims::Integer...) where T = allocate_array(ctx, T, dims)
+
+
+
+"""
+    HeterogeneousComputing.GenContextRNG <: Random.AbstractRNG
+
+Wraps a [`GenContext`](@ref) into a [`Random.AbstractRNG`](@ref) interface.
+
+Do not instantiate directly, use `Random.AbstractRNG(ctx::GenContext)`
+instead.
+"""
+struct GenContextRNG{CTX<:GenContext} <: Random.AbstractRNG
+    ctx::CTX
+end
+
+Random.AbstractRNG(ctx::GenContext) = GenContextRNG(ctx)
+convert(::Type{AbstractRNG}, ctx::GenContext) = Random.AbstractRNG(ctx)
+
+for (randfun, randfun!) in ((:rand,:rand!), (:randn,:randn!), (:randexp,:randexp!))
+    @eval begin
+        Random.$randfun(rng::GenContextRNG{T}) where T = Random.$randfun(rng.rng, T)
+        Random.$randfun(rng::GenContextRNG, T::Random.BitFloatType) = Random.$randfun(rng.rng, T)
+        function Random.$randfun(rng::GenContextRNG{T}, dims::Dims) where T
+            A = allocate_array(rng.cunit, T, dims)
+            Random.$randfun!(rng.rng, A)
+            return A
+        end
+        Random.$randfun(rng::GenContextRNG{T}, dims::Integer...) where T = Random.$randfun(rng, dims)
+        Random.$randfun(rng::GenContextRNG, T::Random.BitFloatType, dims::Dims) = Random.$randfun(rng.rng, T, dims)
+
+        Random.$randfun!(rng::GenContextRNG, A::AbstractArray{T}) where T = Random.$randfun!(rng.rng, A)
+    end
+end
