@@ -17,7 +17,7 @@ HeterogeneousComputingCUDAExt = "CUDA"
 HeterogeneousComputingKernelAbstractionsExt = "KernelAbstractions"
 
 [compat]
-Adapt = "3"
+Adapt = "3, 4"
 Random = "1"
 CUDA = "3, 4, 5"
 KernelAbstractions = "0.8, 0.9"
