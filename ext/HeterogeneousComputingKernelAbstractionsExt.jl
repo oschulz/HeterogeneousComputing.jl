@@ -2,7 +2,7 @@
 
 module HeterogeneousComputingKernelAbstractionsExt
 
-isdefined(Base, :get_extension) ? (import KernelAbstractions) : (import ..KernelAbstractions)
+import KernelAbstractions
 
 using HeterogeneousComputing
 import HeterogeneousComputing: ka_backend

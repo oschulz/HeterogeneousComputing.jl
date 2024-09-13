@@ -2,7 +2,7 @@
 
 module HeterogeneousComputingCUDAExt
 
-isdefined(Base, :get_extension) ? (import CUDA) : (import ..CUDA)
+import CUDA
 
 using HeterogeneousComputing
 import HeterogeneousComputing: ka_backend
