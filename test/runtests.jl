@@ -8,6 +8,7 @@ Test.@testset "Package HeterogeneousComputing" begin
     include("test_rng.jl")
     include("test_compute_unit.jl")
     include("test_gen_context.jl")
+    include("test_numtype.jl")
     include("test_docs.jl")
     isempty(Test.detect_ambiguities(HeterogeneousComputing))
 end # testset

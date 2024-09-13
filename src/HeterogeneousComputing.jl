@@ -15,6 +15,7 @@ include("precision.jl")
 include("rng.jl")
 include("compute_unit.jl")
 include("gen_context.jl")
+include("numtype.jl")
 
 @static if !isdefined(Base, :get_extension)
     using Requires
