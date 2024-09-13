@@ -1,6 +1,6 @@
 The HeterogeneousComputing.jl package is licensed under the MIT "Expat" License:
 
-> Copyright (c) 2018:
+> Copyright (c) 2023-present:
 >
 >    Oliver Schulz <oschulz@mpp.mpg.de>
 > 
