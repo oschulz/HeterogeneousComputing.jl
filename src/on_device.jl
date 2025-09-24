@@ -56,7 +56,9 @@ function (f::_OnDevice{N})(args::Vararg{Any,N}) where {N}
 end
 
 function (f::_OnDevice{N})(@nospecialize(args...)) where {N}
-    throws(ArgumentError("on_device function was created for $N arguments, can't handle $(length(args)) arguments"))
+    return throws(
+        ArgumentError("on_device function was created for $N arguments, can't handle $(length(args)) arguments")
+    )
 end
 
 

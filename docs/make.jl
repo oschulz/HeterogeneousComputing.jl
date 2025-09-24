@@ -12,7 +12,7 @@ DocMeta.setdocmeta!(
     HeterogeneousComputing,
     :DocTestSetup,
     :(using HeterogeneousComputing);
-    recursive=true,
+    recursive = true
 )
 
 makedocs(
@@ -25,15 +25,15 @@ makedocs(
     pages = [
         "Home" => "index.md",
         "API" => "api.md",
-        "LICENSE" => "LICENSE.md",
+        "LICENSE" => "LICENSE.md"
     ],
     doctest = ("fixdoctests" in ARGS) ? :fix : true,
     linkcheck = !("nonstrict" in ARGS),
-    warnonly = ("nonstrict" in ARGS),
+    warnonly = ("nonstrict" in ARGS)
 )
 
 deploydocs(
     repo = "github.com/oschulz/HeterogeneousComputing.jl.git",
     forcepush = true,
-    push_preview = true,
+    push_preview = true
 )

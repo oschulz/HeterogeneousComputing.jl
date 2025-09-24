@@ -20,13 +20,13 @@ end
     cpu_data = StructArray(
         a = rand(Float64, 100),
         b = nestedview(rand(Float32, 10, 100)),
-        c = Fill(1.5, 100),
+        c = Fill(1.5, 100)
     )
 
     bitstype_data = StructArray(
         a = Fill(7.2, 100),
-        b = nestedview(Fill(4.2, 10, 100),),
-        c = Fill(1.5, 100),
+        b = nestedview(Fill(4.2, 10, 100)),
+        c = Fill(1.5, 100)
     )
 
     @test #=@inferred=#(get_compute_unit(cpu_data)) == CPUnit()
@@ -43,7 +43,7 @@ end
         @test typeof(@inferred(allocate_array(cunit, Float32, 4, 5))) == AT2
         @test size(allocate_array(cunit, Float32, (4, 5))) == (4, 5)
         @test size(allocate_array(cunit, Float32, 4, 5)) == (4, 5)
-    
+
         @test @inferred(_KA_Backend(cunit)) isa _KA_Backend
         @test @inferred(convert(_KA_Backend, cunit)) isa _KA_Backend
     end

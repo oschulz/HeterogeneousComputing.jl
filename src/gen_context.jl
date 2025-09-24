@@ -56,12 +56,17 @@ export get_gencontext
 
 get_gencontext(x::T) where T = _generic_get_gencontext(T, get_precision(x), get_compute_unit(x), get_rng(x))
 
-function _generic_get_gencontext(::TX, ::Type{T}, cunit::AbstractComputeUnit, rng::AbstractRNG) where {TX,T<:AbstractFloat}
-    GenContext{T}(cunit, rng)
+function _generic_get_gencontext(
+    ::TX,
+    ::Type{T},
+    cunit::AbstractComputeUnit,
+    rng::AbstractRNG
+) where {TX,T<:AbstractFloat}
+    return GenContext{T}(cunit, rng)
 end
 
 function _generic_get_gencontext(::TX, ::Type{T}, cunit::AbstractComputeUnit, rng::NoRNG) where {TX,T<:AbstractFloat}
-    GenContext{T}(cunit)
+    return GenContext{T}(cunit)
 end
 
 _generic_get_gencontext(::TX, ::Type, ::Any, ::Any) where TX = NoGenContext{TX}()
@@ -78,7 +83,7 @@ get_rng(ctx::GenContext) = ctx.rng
 #AbstractComputeUnit(ctx::GenContext) = get_compute_unit(ctx)
 
 
-for (randfun, randfun!) in ((:rand,:rand!), (:randn,:randn!), (:randexp,:randexp!))
+for (randfun, randfun!) in ((:rand, :rand!), (:randn, :randn!), (:randexp, :randexp!))
     @eval begin
         Random.$randfun(ctx::GenContext{T}) where T = Random.$randfun(ctx.rng, T)
         function Random.$randfun(ctx::GenContext{T}, dims::Dims) where T

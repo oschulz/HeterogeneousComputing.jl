@@ -36,13 +36,22 @@ Base.convert(::Type{AbstractComputeUnit}, dev::CUDA.CuDevice) = CUDAUnit(dev)
 CUDA.CuDevice(cunit::CUDAUnit) = CUDA.CuDevice(cunit.devhandle)
 Base.convert(::Type{CUDA.CuDevice}, cunit::CUDAUnit) = CUDA.CuDevice(cunit)
 
-HeterogeneousComputing.get_compute_unit_impl(@nospecialize(TypeHistory::Type), A::CUDA.CuArray) = CUDAUnit(CUDA.device(A))
-HeterogeneousComputing.get_compute_unit_impl(@nospecialize(TypeHistory::Type), A::CUDA.CUDA.CUSPARSE.AbstractCuSparseArray) = CUDAUnit(CUDA.device(A.nzVal))
+function HeterogeneousComputing.get_compute_unit_impl(@nospecialize(TypeHistory::Type), A::CUDA.CuArray)
+    return CUDAUnit(CUDA.device(A))
+end
+function HeterogeneousComputing.get_compute_unit_impl(
+    @nospecialize(TypeHistory::Type),
+    A::CUDA.CUDA.CUSPARSE.AbstractCuSparseArray
+)
+    return CUDAUnit(CUDA.device(A.nzVal))
+end
 
 
 HeterogeneousComputing.get_total_memory(cunit::CUDAUnit) = CUDA.totalmem(CUDA.CuDevice(cunit))
 
-HeterogeneousComputing.get_free_memory(cunit::CUDAUnit) = unsigned(CUDA.device!(CUDA.available_memory, CUDA.CuDevice(cunit)))
+function HeterogeneousComputing.get_free_memory(cunit::CUDAUnit)
+    return unsigned(CUDA.device!(CUDA.available_memory, CUDA.CuDevice(cunit)))
+end
 
 
 function Adapt.adapt_storage(cunit::CUDAUnit, x)

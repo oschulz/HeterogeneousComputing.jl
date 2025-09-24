@@ -105,7 +105,7 @@ export merge_compute_units
 merge_compute_units() = ComputeUnitIndependent()
 
 @inline function merge_compute_units(a, b, c, ds::Vararg{Any,N}) where N
-    a_b = merge_compute_units(a,b)
+    a_b = merge_compute_units(a, b)
     return merge_compute_units(a_b, c, ds...)
 end
 
@@ -116,7 +116,7 @@ end
 @inline function merge_compute_units(a, b)
     return (a === b) ? a : compute_unit_mergeresult(
         compute_unit_mergerule(a, b),
-        compute_unit_mergerule(b, a),
+        compute_unit_mergerule(b, a)
     )
 end
 
@@ -169,16 +169,30 @@ function get_compute_unit_impl end
 
 # Guard against object reference loops:
 @inline get_compute_unit_impl(::Type{TypeHistory}, x::T) where {TypeHistory,T<:TypeHistory} = begin
-    UnknownComputeUnitOf(x) 
+    UnknownComputeUnitOf(x)
 end
 
 @generated function get_compute_unit_impl(::Type{TypeHistory}, x) where TypeHistory
     if isbitstype(x)
         :(ComputeUnitIndependent())
     else
-        NewTypeHistory = Union{TypeHistory, x}
-        impl = :(begin dev_0 = ComputeUnitIndependent() end)
-        append!(impl.args, [:($(Symbol(:dev_, i)) = merge_compute_units(get_compute_unit_impl($NewTypeHistory, getfield(x, $i)), $(Symbol(:dev_, i-1)))) for i in 1:fieldcount(x)])
+        NewTypeHistory = Union{TypeHistory,x}
+        impl = :(
+            begin
+                dev_0 = ComputeUnitIndependent()
+            end
+        )
+        append!(
+            impl.args,
+            [
+                :(
+                    $(Symbol(:dev_, i)) = merge_compute_units(
+                        get_compute_unit_impl($NewTypeHistory, getfield(x, $i)),
+                        $(Symbol(:dev_, i-1))
+                    )
+                ) for i in 1:fieldcount(x)
+            ]
+        )
         push!(impl.args, :(return $(Symbol(:dev_, fieldcount(x)))))
         impl
     end

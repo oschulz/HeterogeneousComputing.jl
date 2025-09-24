@@ -8,7 +8,7 @@ type `T` could be determined.
 """
 struct NoPrecision{T} end
 
-Base.promote_rule(::Type{<:NoPrecision},::Type{T}) where {T<:AbstractFloat} = T
+Base.promote_rule(::Type{<:NoPrecision}, ::Type{T}) where {T<:AbstractFloat} = T
 Base.typejoin(::Type{<:NoPrecision{T}}, ::Type{<:NoPrecision}) where T = NoPrecision{T}()
 
 
@@ -46,7 +46,7 @@ get_precision_fromtype(::Type{T}) where T = _get_precision_from_fieldtypes(T, fi
 _get_precision_from_fieldtypes(::Type{T}, ::Tuple{}) where T = NoPrecision{T}
 
 function _get_precision_from_fieldtypes(::Type{T}, ftypes::Tuple) where T
-    promote_type(map(get_precision_fromtype, ftypes)...)
+    return promote_type(map(get_precision_fromtype, ftypes)...)
 end
 
 get_precision_fromtype(::Type{T}) where {T<:AbstractFloat} = T

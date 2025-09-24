@@ -38,7 +38,7 @@ using Random
     _check_array(@inferred(allocate_array(ctx, (4, 5))), Float32, (4, 5))
     _check_array(@inferred(allocate_array(ctx, 4, 5)), Float32, (4, 5))
     _check_array(@inferred(allocate_array(ctx, Float16, (4, 5))), Float16, (4, 5))
-    _check_array(@inferred(allocate_array(ctx, Float16, 4, 5)), Float16,(4, 5))
+    _check_array(@inferred(allocate_array(ctx, Float16, 4, 5)), Float16, (4, 5))
 
     for randfun in (rand, randn, randexp)
         @testset "$randfun" begin

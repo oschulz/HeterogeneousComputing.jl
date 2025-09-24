@@ -8,6 +8,6 @@ Documenter.DocMeta.setdocmeta!(
     HeterogeneousComputing,
     :DocTestSetup,
     :(using HeterogeneousComputing);
-    recursive=true,
+    recursive = true
 )
 Documenter.doctest(HeterogeneousComputing)
