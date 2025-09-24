@@ -10,10 +10,12 @@ Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 [weakdeps]
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
 KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
+Reactant = "3c362404-f566-11ee-1572-e11a4b42c853"
 
 [extensions]
 HeterogeneousComputingCUDAExt = "CUDA"
 HeterogeneousComputingKernelAbstractionsExt = "KernelAbstractions"
+HeterogeneousComputingReactantExt = "Reactant"
 
 [compat]
 Adapt = "3, 4"
@@ -21,4 +23,5 @@ CUDA = "3, 4, 5"
 KernelAbstractions = "0.8, 0.9"
 MLDataDevices = "1.12"
 Random = "1"
+Reactant = "0.2.164"
 julia = "1.10"

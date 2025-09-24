@@ -8,15 +8,17 @@ Tools for heterogeneous computing in Julia.
 module HeterogeneousComputing
 
 using Random
+using Base: AbstractLock
 
-using MLDataDevices: AbstractDevice, get_device
-import Adapt
+using MLDataDevices: AbstractDevice, CPUDevice, get_device
+using Adapt: Adapt, adapt
 
 include("precision.jl")
 include("rng.jl")
 include("compute_unit.jl")
 include("gen_context.jl")
 include("numtype.jl")
+include("on_device.jl")
 
 @static if !isdefined(Base, :get_extension)
     using Requires
