@@ -30,29 +30,27 @@ function on_device end
 export on_device
 
 function on_device(f, device::AbstractDevice, @nospecialize(dummy_args::Vararg{Any,N})) where {N}
-    f_dev = adapt(device, f)
-    f_compiled = nothing
+    f_device = adapt(device, f)
     lock = nothing
-    return _OnDevice{N}(f_dev, f_compiled, device, lock)
+    return _OnDevice{N}(f_device, device, lock)
 end
 
 
-struct _OnDevice{N,F1,F2,D,L<:Union{Nothing,ReentrantLock}} <: Function
-    f_dev::F1
-    f_compiled::F2
+struct _OnDevice{N,F,D,L<:Union{Nothing,ReentrantLock}} <: Function
+    f_device::F
     device::D
     lock::L
 end
 
-function _OnDevice{N}(f_dev::F1, f_compiled::F2, device::D, lock::L) where {N,F1,F2,D,L<:Union{Nothing,ReentrantLock}}
-    return _OnDevice{N,F1,F2,D,L}(f_dev, f_compiled, device, lock)
+function _OnDevice{N}(f_device::F, device::D, lock::L) where {N,F,D,L<:Union{Nothing,ReentrantLock}}
+    return _OnDevice{N,F,D,L}(f_device, device, lock)
 end
 
 
 function (f::_OnDevice{N})(args::Vararg{Any,N}) where {N}
     dev_orig = get_device(args)
     adapted_args = adapt(f.device, args)
-    result = _run_maybe_with_lock(f.f_dev, f.f_compiled, f.lock, adapted_args...)
+    result = _run_maybe_with_lock(f.f_device, f.lock, adapted_args...)
     readapted_result = adapt(dev_orig, result)
     return readapted_result
 end
@@ -62,10 +60,5 @@ function (f::_OnDevice{N})(@nospecialize(args...)) where {N}
 end
 
 
-@inline _run_maybe_with_lock(f, ::Nothing, ::Nothing, args::Vararg{Any,N}) where {N} = f(args...)
-
-@inline _run_maybe_with_lock(::Any, f_compiled, ::Nothing, args::Vararg{Any,N}) where {N} = f_compiled(args...)
-
-@inline _run_maybe_with_lock(f, ::Nothing, lock::AbstractLock, args::Vararg{Any,N}) where {N} = @lock lock f(args...)
-
-@inline _run_maybe_with_lock(::Any, f_compiled,  lock::AbstractLock, args::Vararg{Any,N}) where {N} = @lock lock f_compiled(args...)
+@inline _run_maybe_with_lock(f, ::Nothing, args::Vararg{Any,N}) where {N} = f(args...)
+@inline _run_maybe_with_lock(f, lock::AbstractLock, args::Vararg{Any,N}) where {N} = @lock lock f(args...)
