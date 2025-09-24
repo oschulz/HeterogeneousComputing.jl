@@ -4,6 +4,7 @@ version = "0.2.3"
 
 [deps]
 Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
+MLDataDevices = "7e8f7934-dd98-4c1a-8fe8-92b47a384d40"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 
 [weakdeps]
@@ -18,5 +19,6 @@ HeterogeneousComputingKernelAbstractionsExt = "KernelAbstractions"
 Adapt = "3, 4"
 CUDA = "3, 4, 5"
 KernelAbstractions = "0.8, 0.9"
+MLDataDevices = "1.12"
 Random = "1"
 julia = "1.10"

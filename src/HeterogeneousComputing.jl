@@ -9,6 +9,7 @@ module HeterogeneousComputing
 
 using Random
 
+using MLDataDevices: AbstractDevice, get_device
 import Adapt
 
 include("precision.jl")
