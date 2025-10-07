@@ -23,8 +23,8 @@ else
     end
 end
 
-_KA_Backend(cunit::AbstractComputeUnit) = ka_backend(cunit)::_KA_Backend
-Base.convert(::Type{_KA_Backend}, cunit::AbstractComputeUnit) = ka_backend(cunit)::_KA_Backend
+_KA_Backend(cunit::AbstractComputeSystem) = ka_backend(cunit)::_KA_Backend
+Base.convert(::Type{_KA_Backend}, cunit::AbstractComputeSystem) = ka_backend(cunit)::_KA_Backend
 
 KernelAbstractions.GPU(cunit::AbstractGPUnit) = ka_backend(cunit)::KernelAbstractions.GPU
 Base.convert(::Type{KernelAbstractions.GPU}, cunit::AbstractGPUnit) = ka_backend(cunit)::KernelAbstractions.GPU

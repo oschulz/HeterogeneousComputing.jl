@@ -2,11 +2,12 @@
 
 
 """
-    abstract type AbstractComputeUnit
+    abstract type AbstractComputeSystem
 
-Supertype for arbitrary compute units (CPU, GPU, etc.).
+Supertype for compute systems (single, multiple or distributed CPUs, GPUs,
+etc.).
 
-`adapt(cunit::AbstractComputeUnit, x)` adapts `x` for `cunit`.
+`adapt(cunit::AbstractComputeSystem, x)` adapts `x` for `cunit`.
 
 `get_total_memory(cunit)` and `get_free_memory(cunit)` return the total
 resp. the free memory on the compute unit.
@@ -14,18 +15,18 @@ resp. the free memory on the compute unit.
 [`allocate_array(cunit, dims)`](@ref) can be used to allocate new arrays
 on `cunit`.
 
-`KernelAbstractions.Backend(cunit)` will return default
+`HeterogeneousComputing.ka_backend(cunit)` will return default
 [KernelAbstractions](https://github.com/JuliaGPU/KernelAbstractions.jl)
-backend for the type of the compute unit.
+backend for the type of the compute unit (KernelAbstractions must be loaded).
 
 See also [`GenContext`](@ref).
 """
-abstract type AbstractComputeUnit end
-export AbstractComputeUnit
+abstract type AbstractComputeSystem end
+export AbstractComputeSystem
 
 
 """
-    get_total_memory(cunit::AbstractComputeUnit)
+    get_total_memory(cunit::AbstractComputeSystem)
 
 Get the total amount of memory available on `cunit`.
 """
@@ -34,7 +35,7 @@ export get_total_memory
 
 
 """
-get_free_memory(cunit::AbstractComputeUnit)
+get_free_memory(cunit::AbstractComputeSystem)
 
 Get the amount of free memory available on `cunit`.
 """
@@ -43,7 +44,7 @@ export get_free_memory
 
 
 """
-    HeterogeneousComputing.ka_backend(cunit::AbstractComputeUnit)
+    HeterogeneousComputing.ka_backend(cunit::AbstractComputeSystem)
 
 Returns the KernelAbstractions backend for `cunit`.
 
@@ -59,35 +60,54 @@ will use `ka_backend` internally.
 function ka_backend end
 
 
+"""
+    struct ComputeSystem
+
+A compute system based on an `MLDataDevices.AbstractDevice`.
+
+Constructors:
+
+```julia
+ComputeSystem(dev::MLDataDevices.AbstractDevice)
+```
+"""
+struct ComputeSystem{D}
+    _dev::AbstractDevice
+end
+export ComputeSystem
+
+AbstractDevice(cunit::ComputeSystem) = cunit._dev
+convert(::Type{AbstractDevice}, cunit::ComputeSystem) = cunit._dev
+
 
 """
-    struct ComputeUnitIndependent
+    struct ComputeSystemIndependent
 
-`get_compute_unit(x) === ComputeUnitIndependent()` indicates
+`get_compute_unit(x) === ComputeSystemIndependent()` indicates
 that `x` is not tied to a specific compute unit. This typically
 means that x is a statically allocated object.
 """
-struct ComputeUnitIndependent end
-export ComputeUnitIndependent
+struct ComputeSystemIndependent end
+export ComputeSystemIndependent
 
 
 """
-    UnknownComputeUnitOf(x)
+    UnknownComputeSystemOf(x)
 
-`get_compute_unit(x) === ComputeUnitIndependent()` indicates
+`get_compute_unit(x) === ComputeSystemIndependent()` indicates
 that the compute unit for `x` cannot be determined.
 """
-struct UnknownComputeUnitOf{T}
+struct UnknownComputeSystemOf{T}
     x::T
 end
 
 
 """
-    struct MixedComputeSystem <: AbstractComputeUnit
+    struct MixedComputeSystem <: AbstractComputeSystem
 
 A (possibly heterogenous) system of multiple compute units.
 """
-struct MixedComputeSystem <: AbstractComputeUnit end
+struct MixedComputeSystem <: AbstractComputeSystem end
 export MixedComputeSystem
 
 
@@ -102,16 +122,16 @@ specialize `compute_unit_mergerule(a, b)` instead.
 function merge_compute_units end
 export merge_compute_units
 
-merge_compute_units() = ComputeUnitIndependent()
+merge_compute_units() = ComputeSystemIndependent()
 
 @inline function merge_compute_units(a, b, c, ds::Vararg{Any,N}) where N
     a_b = merge_compute_units(a, b)
     return merge_compute_units(a_b, c, ds...)
 end
 
-@inline merge_compute_units(a::UnknownComputeUnitOf, b::UnknownComputeUnitOf) = a
-@inline merge_compute_units(a::UnknownComputeUnitOf, b::Any) = a
-@inline merge_compute_units(a::Any, b::UnknownComputeUnitOf) = b
+@inline merge_compute_units(a::UnknownComputeSystemOf, b::UnknownComputeSystemOf) = a
+@inline merge_compute_units(a::UnknownComputeSystemOf, b::Any) = a
+@inline merge_compute_units(a::Any, b::UnknownComputeSystemOf) = b
 
 @inline function merge_compute_units(a, b)
     return (a === b) ? a : compute_unit_mergeresult(
@@ -123,9 +143,9 @@ end
 struct NoCUnitMergeRule end
 
 @inline compute_unit_mergerule(a::Any, b::Any) = NoCUnitMergeRule()
-@inline compute_unit_mergerule(a::UnknownComputeUnitOf, b::Any) = a
-@inline compute_unit_mergerule(a::UnknownComputeUnitOf, b::UnknownComputeUnitOf) = a
-@inline compute_unit_mergerule(a::ComputeUnitIndependent, b::Any) = b
+@inline compute_unit_mergerule(a::UnknownComputeSystemOf, b::Any) = a
+@inline compute_unit_mergerule(a::UnknownComputeSystemOf, b::UnknownComputeSystemOf) = a
+@inline compute_unit_mergerule(a::ComputeSystemIndependent, b::Any) = b
 
 @inline compute_unit_mergeresult(a_b::NoCUnitMergeRule, b_a::NoCUnitMergeRule) = MixedComputeSystem()
 @inline compute_unit_mergeresult(a_b, b_a::NoCUnitMergeRule) = a_b
@@ -135,9 +155,9 @@ struct NoCUnitMergeRule end
 
 """
     get_compute_unit(x)::Union{
-        AbstractComputeUnit,
-        ComputeUnitIndependent,
-        UnknownComputeUnitOf
+        AbstractComputeSystem,
+        ComputeSystemIndependent,
+        UnknownComputeSystemOf
     }
 
 Get the compute unit backing object `x`.
@@ -149,11 +169,11 @@ function get_compute_unit end
 export get_compute_unit
 
 get_compute_unit(x) = get_compute_unit_impl(Union{}, x)
-get_compute_unit(cunit::AbstractComputeUnit) = cunit
+get_compute_unit(cunit::AbstractComputeSystem) = cunit
 
 
 """
-    HeterogeneousComputing.get_compute_unit_impl(::Type{TypeHistory}, x)::AbstractComputeUnit
+    HeterogeneousComputing.get_compute_unit_impl(::Type{TypeHistory}, x)::AbstractComputeSystem
 
 See [`get_compute_unit_impl`](@ref).
 
@@ -169,17 +189,17 @@ function get_compute_unit_impl end
 
 # Guard against object reference loops:
 @inline get_compute_unit_impl(::Type{TypeHistory}, x::T) where {TypeHistory,T<:TypeHistory} = begin
-    UnknownComputeUnitOf(x)
+    UnknownComputeSystemOf(x)
 end
 
 @generated function get_compute_unit_impl(::Type{TypeHistory}, x) where TypeHistory
     if isbitstype(x)
-        :(ComputeUnitIndependent())
+        :(ComputeSystemIndependent())
     else
         NewTypeHistory = Union{TypeHistory,x}
         impl = :(
             begin
-                dev_0 = ComputeUnitIndependent()
+                dev_0 = ComputeSystemIndependent()
             end
         )
         append!(
@@ -201,11 +221,11 @@ end
 
 
 """
-    struct CPUnit <: AbstractComputeUnit
+    struct CPUnit <: AbstractComputeSystem
 
 `CPUnit()` is the default central processing unit (CPU).
 """
-struct CPUnit <: AbstractComputeUnit end
+struct CPUnit <: AbstractComputeSystem end
 export CPUnit
 
 Adapt.adapt_storage(::CPUnit, x::AbstractArray) = Adapt.adapt(Array, x)
@@ -218,11 +238,11 @@ get_free_memory(::CPUnit) = Sys.free_memory()
 
 
 """
-    abstract type AbstractComputeAccelerator <: AbstractComputeUnit
+    abstract type AbstractComputeAccelerator <: AbstractComputeSystem
 
 Supertype for GPU compute units.
 """
-abstract type AbstractComputeAccelerator <: AbstractComputeUnit end
+abstract type AbstractComputeAccelerator <: AbstractComputeSystem end
 export AbstractComputeAccelerator
 
 
@@ -236,8 +256,8 @@ export AbstractGPUnit
 
 
 """
-    allocate_array(cpunit::AbstractComputeUnit, ::Type{T}, dims::Dims)
-    allocate_array(cpunit::AbstractComputeUnit, ::Type{T}, dims::Integer...)
+    allocate_array(cpunit::AbstractComputeSystem, ::Type{T}, dims::Dims)
+    allocate_array(cpunit::AbstractComputeSystem, ::Type{T}, dims::Integer...)
 
 Allocate a new array with element type `T` and size `dims` on compute unit
 `cunit`.
@@ -247,6 +267,6 @@ The content of the newly allocated array is undefined.
 function allocate_array end
 export allocate_array
 
-allocate_array(cpunit::AbstractComputeUnit, ::Type{T}, dims::Integer...) where T = allocate_array(cpunit, T, dims)
+allocate_array(cpunit::AbstractComputeSystem, ::Type{T}, dims::Integer...) where T = allocate_array(cpunit, T, dims)
 
 allocate_array(::CPUnit, ::Type{T}, dims::Dims) where T = Array{T}(undef, dims)

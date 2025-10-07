@@ -30,7 +30,7 @@ end
     )
 
     @test #=@inferred=#(get_compute_unit(cpu_data)) == CPUnit()
-    @test @inferred(get_compute_unit(bitstype_data)) == ComputeUnitIndependent()
+    @test @inferred(get_compute_unit(bitstype_data)) == ComputeSystemIndependent()
 
     _test_cunit(cunit) = @testset "$(nameof(typeof(cunit)))" begin
         @test @inferred(get_total_memory(cunit)) isa Integer
@@ -53,7 +53,7 @@ end
     if isdefined(Main, :CUDA)
         @testset "CUDA" begin
             using CUDA
-            cuda_unit = AbstractComputeUnit(CuDevice(0))
+            cuda_unit = AbstractComputeSystem(CuDevice(0))
             cuda_data = adapt(cuda_unit, cpu_data)
             @test #=@inferred=#(get_compute_unit(cuda_data)) == cuda_unit
             _test_cunit(cuda_unit)

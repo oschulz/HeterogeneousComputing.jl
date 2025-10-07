@@ -4,9 +4,9 @@ HeterogeneousComputing.jl provides tools to ease heterogeneous computing in Juli
 
 Currently only CPU and CUDA units are supports, support for AMDGPU, oneAPI and Metal will be added as well.
 
-The package provides [`AbstractComputeUnit`](@ref) and [`GenContext`](@ref) which allow for determining which compute unit given content is currently located on, moving it to other compute units, and generating new data on specific compute units.
+The package provides [`AbstractComputeSystem`](@ref) and [`GenContext`](@ref) which allow for determining which compute unit given content is currently located on, moving it to other compute units, and generating new data on specific compute units.
 
-The idea is that a `AbstractComputeUnit` or an `AbstractComputeUnit` (which compines a compute unit with a random number generator and a desired numerical precision) can be passed around and propagate through an application, so that the computational context is always available.
+The idea is that a `AbstractComputeSystem` or an `AbstractComputeSystem` (which compines a compute unit with a random number generator and a desired numerical precision) can be passed around and propagate through an application, so that the computational context is always available.
 
 Example:
 
@@ -25,7 +25,7 @@ cpu_unit = CPUnit()
 get_compute_unit(cpu_data) == cpu_unit
 
 # Get compute unit for the current CUDA device:
-gpu_unit = AbstractComputeUnit(CUDA.device())
+gpu_unit = AbstractComputeSystem(CUDA.device())
 
 # Move the data to the GPU:
 
@@ -56,7 +56,7 @@ new_cpu_data = adapt(cpu_unit, new_gpu_data)
 
 HeterogeneousComputing also has support for
 [`KernelAbstractions`](https://github.com/JuliaGPU/KernelAbstractions.jl),
-a `KernelAbstractions.Backend` can be derived from an `AbstractComputeUnit`:
+a `KernelAbstractions.Backend` can be derived from an `AbstractComputeSystem`:
 
 ```julia
 using KernelAbstractions

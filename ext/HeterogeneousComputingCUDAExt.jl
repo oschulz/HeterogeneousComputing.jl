@@ -30,8 +30,8 @@ end
 CUDAUnit(dev::CUDA.CuDevice) = CUDAUnit(dev.handle)
 
 
-HeterogeneousComputing.AbstractComputeUnit(dev::CUDA.CuDevice) = CUDAUnit(dev.handle)
-Base.convert(::Type{AbstractComputeUnit}, dev::CUDA.CuDevice) = CUDAUnit(dev)
+HeterogeneousComputing.AbstractComputeSystem(dev::CUDA.CuDevice) = CUDAUnit(dev.handle)
+Base.convert(::Type{AbstractComputeSystem}, dev::CUDA.CuDevice) = CUDAUnit(dev)
 
 CUDA.CuDevice(cunit::CUDAUnit) = CUDA.CuDevice(cunit.devhandle)
 Base.convert(::Type{CUDA.CuDevice}, cunit::CUDAUnit) = CUDA.CuDevice(cunit)

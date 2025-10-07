@@ -18,14 +18,14 @@ NoGenContext(::Type{T}) where T = NoGenContext{Type{T}}()
 """
     GenContext{T=AbstractFloat}(
         rng::AbstractRNG = Random.default_rng(),
-        cunit::AbstractComputeUnit = CPUnit()
+        cunit::AbstractComputeSystem = CPUnit()
     )
 
 Context for generative computations.
 
 * `Base.eltype(ctx::GenContext)`` will return `T`.
 """
-struct GenContext{T<:AbstractFloat,CU<:AbstractComputeUnit,RNG<:AbstractRNG}
+struct GenContext{T<:AbstractFloat,CU<:AbstractComputeSystem,RNG<:AbstractRNG}
     cunit::CU
     rng::RNG
 end
@@ -36,7 +36,7 @@ export GenContext
 
 @inline GenContext(args...) = GenContext{Float64}(args...)
 GenContext{T}() where T = GenContext{T}(CPUnit(), Random.default_rng())
-GenContext{T}(cpunit::AbstractComputeUnit) where T = GenContext{T}(cpunit, Random.default_rng())
+GenContext{T}(cpunit::AbstractComputeSystem) where T = GenContext{T}(cpunit, Random.default_rng())
 # ToDo: Derive cunit from RNG type, e.g. if RNG is a GPU-specific RNG?
 GenContext{T}(rng::AbstractRNG) where T = GenContext{T}(CPUnit(), rng)
 
@@ -59,13 +59,13 @@ get_gencontext(x::T) where T = _generic_get_gencontext(T, get_precision(x), get_
 function _generic_get_gencontext(
     ::TX,
     ::Type{T},
-    cunit::AbstractComputeUnit,
+    cunit::AbstractComputeSystem,
     rng::AbstractRNG
 ) where {TX,T<:AbstractFloat}
     return GenContext{T}(cunit, rng)
 end
 
-function _generic_get_gencontext(::TX, ::Type{T}, cunit::AbstractComputeUnit, rng::NoRNG) where {TX,T<:AbstractFloat}
+function _generic_get_gencontext(::TX, ::Type{T}, cunit::AbstractComputeSystem, rng::NoRNG) where {TX,T<:AbstractFloat}
     return GenContext{T}(cunit)
 end
 
@@ -80,7 +80,7 @@ get_rng(ctx::GenContext) = ctx.rng
 
 #Base.eltype(ctx::GenContext) = get_precision(ctx)
 #Random.AbstractRNG(ctx::GenContext) = get_rng(ctx)
-#AbstractComputeUnit(ctx::GenContext) = get_compute_unit(ctx)
+#AbstractComputeSystem(ctx::GenContext) = get_compute_unit(ctx)
 
 
 for (randfun, randfun!) in ((:rand, :rand!), (:randn, :randn!), (:randexp, :randexp!))
