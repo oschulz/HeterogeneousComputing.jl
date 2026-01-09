@@ -9,6 +9,8 @@ import HeterogeneousComputing: ka_backend
 
 import Adapt
 
+using MLDataDevices: MLDataDevices
+
 
 """
     struct CUDAUnit <: AbstractGPUnit
@@ -39,11 +41,15 @@ Base.convert(::Type{CUDA.CuDevice}, cunit::CUDAUnit) = CUDA.CuDevice(cunit)
 function HeterogeneousComputing.get_compute_unit_impl(@nospecialize(TypeHistory::Type), A::CUDA.CuArray)
     return CUDAUnit(CUDA.device(A))
 end
-function HeterogeneousComputing.get_compute_unit_impl(
-    @nospecialize(TypeHistory::Type),
-    A::CUDA.CUDA.CUSPARSE.AbstractCuSparseArray
-)
-    return CUDAUnit(CUDA.device(A.nzVal))
+
+for sym in [:AbstractCuSparseVector, :AbstractCuSparseMatrix, :AbstractCuSparseArray, :CuSparseMatrixCSC, :CuSparseMatrixCSR]
+    if isdefined(CUDA.CUSPARSE, sym)
+        @eval function HeterogeneousComputing.get_compute_unit_impl(
+            @nospecialize(TypeHistory::Type), A::CUDA.CUSPARSE.$sym
+        )
+            return CUDAUnit(MLDataDevices.get_device(A).device)
+        end
+    end
 end
 
 
