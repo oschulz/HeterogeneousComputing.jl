@@ -56,7 +56,11 @@ end
 HeterogeneousComputing.get_total_memory(cunit::CUDAUnit) = CUDA.totalmem(CUDA.CuDevice(cunit))
 
 function HeterogeneousComputing.get_free_memory(cunit::CUDAUnit)
-    return unsigned(CUDA.device!(CUDA.available_memory, CUDA.CuDevice(cunit)))
+    @static if isdefined(CUDA, :free_memory)
+        return unsigned(CUDA.device!(CUDA.free_memory, CUDA.CuDevice(cunit)))
+    else
+        return unsigned(CUDA.device!(CUDA.available_memory, CUDA.CuDevice(cunit)))
+    end
 end
 
 
