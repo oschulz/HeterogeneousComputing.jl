@@ -29,7 +29,7 @@ end
         c = Fill(1.5, 100)
     )
 
-    @test #=@inferred=#(get_compute_unit(cpu_data)) == CPUnit()
+    @test (get_compute_unit(cpu_data)) == CPUnit() # @inferred
     @test @inferred(get_compute_unit(bitstype_data)) == ComputeUnitIndependent()
 
     _test_cunit(cunit) = @testset "$(nameof(typeof(cunit)))" begin
@@ -55,7 +55,7 @@ end
             using CUDA
             cuda_unit = AbstractComputeUnit(CuDevice(0))
             cuda_data = adapt(cuda_unit, cpu_data)
-            @test #=@inferred=#(get_compute_unit(cuda_data)) == cuda_unit
+            @test (get_compute_unit(cuda_data)) == cuda_unit # @inferred
             _test_cunit(cuda_unit)
         end
     end

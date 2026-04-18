@@ -188,7 +188,7 @@ end
                 :(
                     $(Symbol(:dev_, i)) = merge_compute_units(
                         get_compute_unit_impl($NewTypeHistory, getfield(x, $i)),
-                        $(Symbol(:dev_, i-1))
+                        $(Symbol(:dev_, i - 1))
                     )
                 ) for i in 1:fieldcount(x)
             ]

@@ -42,7 +42,8 @@ function HeterogeneousComputing.get_compute_unit_impl(@nospecialize(TypeHistory:
     return CUDAUnit(CUDA.device(A))
 end
 
-for sym in [:AbstractCuSparseVector, :AbstractCuSparseMatrix, :AbstractCuSparseArray, :CuSparseMatrixCSC, :CuSparseMatrixCSR]
+for sym in
+    [:AbstractCuSparseVector, :AbstractCuSparseMatrix, :AbstractCuSparseArray, :CuSparseMatrixCSC, :CuSparseMatrixCSR]
     if isdefined(CUDA.CUSPARSE, sym)
         @eval function HeterogeneousComputing.get_compute_unit_impl(
             @nospecialize(TypeHistory::Type), A::CUDA.CUSPARSE.$sym
