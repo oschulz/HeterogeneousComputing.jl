@@ -9,7 +9,7 @@ type `T` could be determined.
 struct NoPrecision{T} end
 
 Base.promote_rule(::Type{<:NoPrecision}, ::Type{T}) where {T<:AbstractFloat} = T
-Base.typejoin(::Type{<:NoPrecision{T}}, ::Type{<:NoPrecision}) where T = NoPrecision{T}()
+Base.typejoin(::Type{NoPrecision{T}}, ::Type{<:NoPrecision}) where T = NoPrecision{T}
 
 
 """
