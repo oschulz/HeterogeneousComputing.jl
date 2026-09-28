@@ -75,7 +75,12 @@ end
         @test get_compute_unit((flat_data, jl_data)) === MixedComputeSystem()
         @test get_compute_unit(x -> jl_data.a .* x) === AbstractComputeUnit(JLBackend())
 
-        # Nested array wrappers:
+        # Nested array wrappers, inferred before their components (with element
+        # types not used elsewhere, so no inference results are cached):
+        nested = VectorOfSimilarVectors(reshape(view(reshape(view(zeros(Int8, 16), :), 4, 4), :, 1:2), 2, 4))
+        @test @inferred(get_compute_unit(nested)) === CPUnit()
+        @test @inferred(get_compute_unit(StructArray(a = nested, b = view(rand(UInt8, 8), 1:4)))) === CPUnit()
+
         A = reshape(view(zeros(4), :), 2, 2)
         @test @inferred(get_compute_unit(A)) === CPUnit()
         @test @inferred(get_compute_unit(VectorOfSimilarVectors(A))) === CPUnit()

@@ -211,23 +211,60 @@ get_compute_unit_impl(@nospecialize(T::Type)) = ComputeUnitIndependent()
 @inline _get_cunit_via(cunit, @nospecialize(x), @nospecialize(visited)) = cunit
 @inline _get_cunit_via(::_RecurseFields, x, visited) = _get_fields_cunit(x, visited)
 
+# The recursion through fields of concrete types is inlined into a single
+# generated function body, since inference would give up on recursive calls
+# of the same method with nested types:
 @generated function _get_fields_cunit(x, visited)
-    isbitstype(x) && return :(ComputeUnitIndependent())
-    may_loop = _may_close_ref_loop(x)
-    field_cunit(i) = :(_get_cunit(getfield(x, $i), visited))
-    field_cunit_maybe_undef(i) = :(isdefined(x, $i) ? $(field_cunit(i)) : ComputeUnitIndependent())
     body = Expr(:block)
-    if may_loop
+    if _may_close_ref_loop(x)
         push!(body.args, :(visited = _visit!(visited, x)))
         push!(body.args, :(visited isa _AlreadyVisited && return ComputeUnitIndependent()))
     end
-    push!(body.args, :(cunit_0 = ComputeUnitIndependent()))
-    for i in 1:fieldcount(x)
-        fcunit = ismutabletype(x) && !isbitstype(fieldtype(x, i)) ? field_cunit_maybe_undef(i) : field_cunit(i)
-        push!(body.args, :($(Symbol(:cunit_, i)) = merge_compute_units($fcunit, $(Symbol(:cunit_, i - 1)))))
-    end
-    push!(body.args, :(return $(Symbol(:cunit_, fieldcount(x)))))
+    push!(body.args, _fields_cunit_expr(x, :x, :visited, 0))
     return body
+end
+
+const _max_inline_depth = 8
+
+function _fields_cunit_expr(@nospecialize(T::Type), xex, vex, depth::Int)
+    isbitstype(T) && return :(ComputeUnitIndependent())
+    # Types that may close reference loops need to be tracked:
+    depth > 0 && _may_close_ref_loop(T) && return :(_get_fields_cunit($xex, $vex))
+    body = Expr(:block)
+    cunit = gensym(:cunit)
+    push!(body.args, :($cunit = ComputeUnitIndependent()))
+    for i in 1:fieldcount(T)
+        FT = fieldtype(T, i)
+        f = gensym(:field)
+        fcunit = Expr(:let, :($f = getfield($xex, $i)), _field_cunit_expr(FT, f, vex, depth))
+        if ismutabletype(T) && !isbitstype(FT)
+            fcunit = :(isdefined($xex, $i) ? $fcunit : ComputeUnitIndependent())
+        end
+        new_cunit = gensym(:cunit)
+        push!(body.args, :($new_cunit = merge_compute_units($fcunit, $cunit)))
+        cunit = new_cunit
+    end
+    push!(body.args, cunit)
+    return body
+end
+
+function _field_cunit_expr(@nospecialize(FT::Type), f::Symbol, vex, depth::Int)
+    if !isconcretetype(FT) || _has_cunit_rule(FT) || depth >= _max_inline_depth
+        return :(_get_cunit($f, $vex))
+    else
+        rule = gensym(:rule)
+        return quote
+            $rule = get_compute_unit_impl($f)
+            $rule isa _RecurseFields ? $(_fields_cunit_expr(FT, f, vex, depth + 1)) : $rule
+        end
+    end
+end
+
+# Types with compute unit rules in HeterogeneousComputing itself, no need to
+# inline recursion code for them:
+function _has_cunit_rule(@nospecialize(T::Type))
+    return T <: Union{Type,Array,AbstractComputeUnit,GPUArraysCore.AbstractGPUArray,AbstractRNG,GenContext} ||
+           (isdefined(Core, :Memory) && T <: Core.Memory)
 end
 
 # Whether objects of type T may be part of a reference loop. Loops need a
