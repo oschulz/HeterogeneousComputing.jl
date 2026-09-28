@@ -5,6 +5,7 @@ using Test
 using HeterogeneousComputing
 using Random: rand!, randn!, randexp!
 using Adapt: adapt
+using MLDataDevices: default_device_rng
 
 
 function gen_testdata()
@@ -57,6 +58,10 @@ function test_cunit(cunit::AbstractComputeUnit)
         @test eltype(x_adapted) == Float64 && get_compute_unit(x_adapted) == cunit
         @test _on_host(x_adapted) == x
         @test adapt(CPUnit(), x_adapted) == x
+
+        # Contexts from the default RNG of a unit use that unit:
+        @test get_compute_unit(GenContext{Float32}(default_device_rng(cunit))) == cunit
+        @test get_compute_unit(GenContext{Float32}(cunit)) == cunit
     end
 end
 

@@ -26,7 +26,6 @@ struct JLArraysUnit <: AbstractComputeUnit end
 HeterogeneousComputing.AbstractComputeUnit(::JLBackend) = JLArraysUnit()
 
 get_compute_unit_impl(@nospecialize(TypeHistory::Type), ::JLArray) = JLArraysUnit()
-get_compute_unit_impl(@nospecialize(TypeHistory::Type), ::GPUArrays.RNG{JLArray}) = JLArraysUnit()
 
 Adapt.adapt_storage(::JLArraysUnit, x) = Adapt.adapt_storage(JLArray, x)
 # MLDataDevices considers JLArrays to be CPU arrays:
