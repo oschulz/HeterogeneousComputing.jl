@@ -19,7 +19,12 @@ Reactant.set_default_backend(get(ENV, "HETEROGENEOUSCOMPUTING_REACTANT_BACKEND",
     x = Reactant.to_rarray(rand(Float32, 5))
     cunit = get_compute_unit(x)
     @test cunit isa DeviceUnit{<:ReactantDevice}
-    @test merge_compute_units(cunit, DeviceUnit(ReactantDevice())) === cunit
+    # Units derived within compiled code don't specify the device, but merge
+    # with units that do:
+    partial = DeviceUnit(ReactantDevice())
+    @test partial != cunit
+    @test merge_compute_units(cunit, partial) === cunit
+    @test merge_compute_units(partial, cunit) === cunit
     @test get_compute_unit(Reactant.to_rarray(2.0f0; track_numbers = Number)) == cunit
     @test get_precision(Reactant.to_rarray(2.0f0; track_numbers = Number)) === Float32
 
@@ -35,7 +40,8 @@ Reactant.set_default_backend(get(ENV, "HETEROGENEOUSCOMPUTING_REACTANT_BACKEND",
     function f(ctx, x)
         return (
             randn(ctx, 3), randexp!(ctx, similar(x)), fill_array(ctx, sum(x), 2), rand(ctx),
-            get_compute_unit(x) == get_compute_unit(ctx), get_precision(sum(x))
+            merge_compute_units(get_compute_unit(x), get_compute_unit(ctx)) == get_compute_unit(ctx),
+            get_precision(sum(x))
         )
     end
     f_compiled = @compile f(ctx, x)
@@ -45,10 +51,17 @@ Reactant.set_default_backend(get(ENV, "HETEROGENEOUSCOMPUTING_REACTANT_BACKEND",
     @test all(>=(0), Array(r1[2]))
     @test Array(r1[3]) ≈ fill(sum(Array(x)), 2)
     @test r1[5] == true
+    @test 0 <= Float32(r1[4]) <= 1
+    @test Float32(r1[4]) != Float32(r2[4])
     @test r1[6] === Float32
     # The RNG state advances across calls of the compiled function:
     @test Array(r1[1]) != Array(r2[1])
     @test Array(r1[2]) != Array(r2[2])
+
+    # RNGs must be passed into compiled code, draws only happen there:
+    @test_throws ArgumentError @jit((x -> randn(GenContext{Float32}(get_compute_unit(x)), 3))(x))
+    @test_throws ArgumentError rand(ctx, 3)
+    @test_throws ArgumentError rand(ctx)
 
     g = on_device((x, y) -> sum(x .* y), cunit, rand(Float32, 3), rand(Float32, 3))
     @test g(ones(Float32, 3), ones(Float32, 3)) ≈ 3
