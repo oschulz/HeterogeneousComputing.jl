@@ -6,15 +6,23 @@
 
 Supertype for arbitrary compute units (CPU, GPU, etc.).
 
-`adapt(cunit::AbstractComputeUnit, x)` adapts `x` for `cunit`.
+Most compute units are [`DeviceUnit`](@ref)s, which are based on
+`MLDataDevices` devices. `AbstractComputeUnit(dev::MLDataDevices.AbstractDevice)`
+returns the compute unit for a device.
+
+`adapt(cunit::AbstractComputeUnit, x)` adapts `x` for `cunit`, without
+changing the numerical precision of `x`.
 
 `get_total_memory(cunit)` and `get_free_memory(cunit)` return the total
 resp. the free memory on the compute unit.
 
-[`allocate_array(cunit, dims)`](@ref) can be used to allocate new arrays
-on `cunit`.
+[`allocate_array(cunit, T, dims)`](@ref) and [`fill_array(cunit, x, dims)`](@ref)
+can be used to create new arrays on `cunit`.
 
-`KernelAbstractions.Backend(cunit)` will return default
+`MLDataDevices.default_device_rng(cunit)` returns the default random number
+generator for `cunit`.
+
+`KernelAbstractions.Backend(cunit)` will return the default
 [KernelAbstractions](https://github.com/JuliaGPU/KernelAbstractions.jl)
 backend for the type of the compute unit.
 
@@ -34,12 +42,24 @@ export get_total_memory
 
 
 """
-get_free_memory(cunit::AbstractComputeUnit)
+    get_free_memory(cunit::AbstractComputeUnit)
 
 Get the amount of free memory available on `cunit`.
 """
 function get_free_memory end
 export get_free_memory
+
+
+"""
+    is_host_unit(cunit::AbstractComputeUnit)::Bool
+
+Whether arrays on `cunit` can be processed by generic host code, e.g. via
+scalar indexing.
+"""
+function is_host_unit end
+export is_host_unit
+
+is_host_unit(::AbstractComputeUnit) = false
 
 
 """
@@ -74,7 +94,7 @@ export ComputeUnitIndependent
 """
     UnknownComputeUnitOf(x)
 
-`get_compute_unit(x) === ComputeUnitIndependent()` indicates
+`get_compute_unit(x) === UnknownComputeUnitOf(x)` indicates
 that the compute unit for `x` cannot be determined.
 """
 struct UnknownComputeUnitOf{T}
@@ -114,11 +134,13 @@ end
 @inline merge_compute_units(a::Any, b::UnknownComputeUnitOf) = b
 
 @inline function merge_compute_units(a, b)
-    return (a === b) ? a : compute_unit_mergeresult(
+    return _same_cunit(a, b) ? a : compute_unit_mergeresult(
         compute_unit_mergerule(a, b),
         compute_unit_mergerule(b, a)
     )
 end
+
+@inline _same_cunit(a, b) = a === b
 
 struct NoCUnitMergeRule end
 
@@ -142,6 +164,10 @@ struct NoCUnitMergeRule end
 
 Get the compute unit backing object `x`.
 
+Recurses through the fields of `x` and merges the compute units of the
+leaves via [`merge_compute_units`](@ref). The compute units of GPU arrays and
+random number generators are based on `MLDataDevices.get_device`.
+
 Don't specialize `get_compute_unit`, specialize
 [`HeterogeneousComputing.get_compute_unit_impl`](@ref) instead.
 """
@@ -153,9 +179,9 @@ get_compute_unit(cunit::AbstractComputeUnit) = cunit
 
 
 """
-    HeterogeneousComputing.get_compute_unit_impl(::Type{TypeHistory}, x)::AbstractComputeUnit
+    HeterogeneousComputing.get_compute_unit_impl(::Type{TypeHistory}, x)
 
-See [`get_compute_unit_impl`](@ref).
+See [`get_compute_unit`](@ref).
 
 Specializations that directly resolve the compute unit based on `x` can
 ignore `TypeHistory`:
@@ -198,17 +224,82 @@ end
     end
 end
 
+@inline get_compute_unit_impl(@nospecialize(TypeHistory::Type), A::GPUArraysCore.AbstractGPUArray) =
+    _cunit_from_device(get_device(A), A)
+
+@inline get_compute_unit_impl(@nospecialize(TypeHistory::Type), rng::AbstractRNG) =
+    _cunit_from_device(get_device(rng), rng)
+
+_cunit_from_device(dev::AbstractDevice, @nospecialize(x)) = DeviceUnit(dev)
+_cunit_from_device(::UnknownDevice, x) = UnknownComputeUnitOf(x)
+_cunit_from_device(::Nothing, @nospecialize(x)) = ComputeUnitIndependent()
+
 
 
 """
-    struct CPUnit <: AbstractComputeUnit
+    struct DeviceUnit{D<:MLDataDevices.AbstractDevice} <: AbstractComputeUnit
+
+A compute unit based on an `MLDataDevices` device.
+
+Constructors:
+
+```julia
+DeviceUnit(dev::MLDataDevices.AbstractDevice)
+AbstractComputeUnit(dev::MLDataDevices.AbstractDevice)
+```
+
+The device is normalized on construction: The unit has no element type
+(`adapt(cunit, x)` preserves numerical precision, use a [`GenContext`](@ref)
+to specify precision), and a device that refers to the currently active
+device (e.g. `CUDADevice()`) is resolved to that specific device. So units
+constructed from devices and units derived from data via
+[`get_compute_unit`](@ref) are equal.
+
+`MLDataDevices.get_device(cunit)` returns the device.
+"""
+struct DeviceUnit{D<:AbstractDevice} <: AbstractComputeUnit
+    device::D
+
+    function DeviceUnit(dev::AbstractDevice)
+        canonical_dev = _canonical_device(dev)
+        return new{typeof(canonical_dev)}(canonical_dev)
+    end
+end
+export DeviceUnit
+
+_canonical_device(dev::AbstractDevice) = MLDataDevices.with_eltype(dev, nothing)
+
+AbstractComputeUnit(dev::AbstractDevice) = DeviceUnit(dev)
+Base.convert(::Type{AbstractComputeUnit}, dev::AbstractDevice) = DeviceUnit(dev)
+
+MLDataDevices.get_device(cunit::DeviceUnit) = cunit.device
+MLDataDevices.default_device_rng(cunit::DeviceUnit) = default_device_rng(cunit.device)
+
+Adapt.adapt_storage(cunit::DeviceUnit, x) = Adapt.adapt_storage(cunit.device, x)
+
+# Devices may contain handles that are equal but not identical, and devices
+# derived within traced code may specify their location only partially
+# (equal to any location), so units are compared via device equality and
+# hashed by device kind only:
+Base.:(==)(a::DeviceUnit, b::DeviceUnit) = a.device == b.device
+Base.hash(cunit::DeviceUnit, h::UInt) = hash(Base.typename(typeof(cunit.device)), hash(DeviceUnit, h))
+
+@inline _same_cunit(a::DeviceUnit, b::DeviceUnit) = a == b
+
+
+"""
+    const CPUnit = DeviceUnit{MLDataDevices.CPUDevice{Nothing}}
 
 `CPUnit()` is the default central processing unit (CPU).
 """
-struct CPUnit <: AbstractComputeUnit end
+const CPUnit = DeviceUnit{CPUDevice{Nothing}}
 export CPUnit
 
-Adapt.adapt_storage(::CPUnit, x::AbstractArray) = Adapt.adapt(Array, x)
+(::Type{CPUnit})() = DeviceUnit(CPUDevice())
+
+Base.show(io::IO, ::CPUnit) = print(io, "CPUnit()")
+
+is_host_unit(::CPUnit) = true
 
 get_total_memory(::CPUnit) = Sys.total_memory()
 get_free_memory(::CPUnit) = Sys.free_memory()
@@ -218,26 +309,8 @@ get_free_memory(::CPUnit) = Sys.free_memory()
 
 
 """
-    abstract type AbstractComputeAccelerator <: AbstractComputeUnit
-
-Supertype for GPU compute units.
-"""
-abstract type AbstractComputeAccelerator <: AbstractComputeUnit end
-export AbstractComputeAccelerator
-
-
-"""
-    abstract type AbstractGPUnit <: AbstractComputeAccelerator
-
-Supertype for GPU comute units.
-"""
-abstract type AbstractGPUnit <: AbstractComputeAccelerator end
-export AbstractGPUnit
-
-
-"""
-    allocate_array(cpunit::AbstractComputeUnit, ::Type{T}, dims::Dims)
-    allocate_array(cpunit::AbstractComputeUnit, ::Type{T}, dims::Integer...)
+    allocate_array(cunit::AbstractComputeUnit, ::Type{T}, dims::Dims)
+    allocate_array(cunit::AbstractComputeUnit, ::Type{T}, dims::Integer...)
 
 Allocate a new array with element type `T` and size `dims` on compute unit
 `cunit`.
@@ -247,6 +320,24 @@ The content of the newly allocated array is undefined.
 function allocate_array end
 export allocate_array
 
-allocate_array(cpunit::AbstractComputeUnit, ::Type{T}, dims::Integer...) where T = allocate_array(cpunit, T, dims)
+allocate_array(cunit::AbstractComputeUnit, ::Type{T}, dims::Integer...) where T = allocate_array(cunit, T, dims)
 
 allocate_array(::CPUnit, ::Type{T}, dims::Dims) where T = Array{T}(undef, dims)
+
+# Generic fallback, avoids transferring data from the host:
+function allocate_array(cunit::DeviceUnit, ::Type{T}, dims::Dims) where T
+    return similar(adapt(cunit, Vector{T}()), dims)
+end
+
+
+"""
+    fill_array(cunit::AbstractComputeUnit, x, dims::Dims)
+    fill_array(cunit::AbstractComputeUnit, x, dims::Integer...)
+
+Create an array of size `dims` on compute unit `cunit`, filled with `x`.
+"""
+function fill_array end
+export fill_array
+
+fill_array(cunit::AbstractComputeUnit, x, dims::Dims) = fill!(allocate_array(cunit, typeof(x), dims), x)
+fill_array(cunit::AbstractComputeUnit, x, dims::Integer...) = fill_array(cunit, x, dims)

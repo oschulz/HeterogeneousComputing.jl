@@ -4,6 +4,10 @@ using HeterogeneousComputing
 using Test
 
 using Random
+using MLDataDevices: CPUDevice, cpu_device
+using JLArrays
+
+
 
 @testset "gen_context" begin
     RNG = typeof(Random.default_rng())
@@ -16,6 +20,11 @@ using Random
     @test @inferred(GenContext{Float32}(CPUnit())) isa GenContext{Float32,CPUnit,RNG}
     @test @inferred(GenContext{Float32}(Random.default_rng())) isa GenContext{Float32,CPUnit,RNG}
     @test @inferred(GenContext{Float32}(CPUnit(), Random.default_rng())) isa GenContext{Float32,CPUnit,RNG}
+
+    @test @inferred(GenContext(CPUDevice())) isa GenContext{Float64,CPUnit,RNG}
+    @test @inferred(GenContext(cpu_device(Float32))) isa GenContext{Float32,CPUnit,RNG}
+    @test @inferred(GenContext(cpu_device(Float32), Xoshiro(42))) isa GenContext{Float32,CPUnit,Xoshiro}
+    @test @inferred(GenContext{Float16}(cpu_device(Float32))) isa GenContext{Float16,CPUnit,RNG}
 
     cpunit = CPUnit()
     rng = Random.default_rng()
@@ -32,6 +41,8 @@ using Random
 
     @test @inferred(get_gencontext(ctx)) === ctx
     @test @inferred(get_gencontext(rand(Float32, 7))) isa GenContext{Float32,CPUnit,RNG}
+    @test @inferred(get_gencontext(42)) === HeterogeneousComputing.NoGenContext{Int}()
+    @test get_gencontext("foo") === HeterogeneousComputing.NoGenContext{String}()
 
     _check_array(A, ::Type{T}, sz::Dims{N}) where {T,N} = @test A isa AbstractArray{T,N} && size(A) == sz
 
@@ -39,12 +50,23 @@ using Random
     _check_array(@inferred(allocate_array(ctx, 4, 5)), Float32, (4, 5))
     _check_array(@inferred(allocate_array(ctx, Float16, (4, 5))), Float16, (4, 5))
     _check_array(@inferred(allocate_array(ctx, Float16, 4, 5)), Float16, (4, 5))
+    @test @inferred(fill_array(ctx, 1.5f0, 2, 3)) == fill(1.5f0, 2, 3)
 
-    for randfun in (rand, randn, randexp)
-        @testset "$randfun" begin
-            @inferred(randfun(ctx)) isa Float32
-            _check_array(@inferred(randfun(ctx, (4, 5))), Float32, (4, 5))
-            _check_array(@inferred(randfun(ctx, 4, 5)), Float32, (4, 5))
-        end
+    test_gencontext_draws(ctx)
+    test_gencontext_draws(GenContext{Float64}(Xoshiro(123)))
+
+    @testset "JLArrays" begin
+        jl_unit = AbstractComputeUnit(JLBackend())
+        jl_ctx = GenContext{Float32}(jl_unit)
+        @test jl_ctx isa GenContext{Float32,typeof(jl_unit)}
+        @test GenContext{Float32}(get_rng(jl_ctx)) === jl_ctx
+        @test get_gencontext(allocate_array(jl_ctx, 3)) isa GenContext{Float32,typeof(jl_unit)}
+        test_gencontext_draws(jl_ctx)
+    end
+
+    @testset "exponential from uniform variates" begin
+        @test iszero(HeterogeneousComputing._neglog_uniform(0.0f0))
+        @test iszero(HeterogeneousComputing._neglog_uniform(1.0f0))
+        @test HeterogeneousComputing._neglog_uniform(0.5) ≈ log(2)
     end
 end

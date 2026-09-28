@@ -10,8 +10,10 @@ module HeterogeneousComputing
 using Random
 using Base: AbstractLock
 
-using MLDataDevices: AbstractDevice, CPUDevice, get_device
+using MLDataDevices: MLDataDevices, AbstractDevice, CPUDevice, UnknownDevice
+using MLDataDevices: get_device, default_device_rng
 using Adapt: Adapt, adapt
+import GPUArraysCore
 
 include("precision.jl")
 include("rng.jl")
@@ -19,18 +21,5 @@ include("compute_unit.jl")
 include("gen_context.jl")
 include("numtype.jl")
 include("on_device.jl")
-
-@static if !isdefined(Base, :get_extension)
-    using Requires
-end
-
-function __init__()
-    @static if !isdefined(Base, :get_extension)
-        @require CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba" include("../ext/HeterogeneousComputingCUDAExt.jl")
-        @require KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c" include(
-            "../ext/HeterogeneousComputingKernelAbstractionsExt.jl"
-        )
-    end
-end
 
 end # module

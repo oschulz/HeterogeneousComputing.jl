@@ -1,7 +1,8 @@
 # This file is a part of HeterogeneousComputing.jl, licensed under the MIT License (MIT).
 
 """
-    on_device(f, device::AbstractDevice, dummy_args...)
+    on_device(f, device::MLDataDevices.AbstractDevice, dummy_args...)
+    on_device(f, cunit::DeviceUnit, dummy_args...)
 
 Returns a function that runs `f` on the specified `device` with arguments
 like `dummy_args`.
@@ -35,6 +36,10 @@ function on_device(f, device::AbstractDevice, @nospecialize(dummy_args::Vararg{A
     return _OnDevice{N}(f_device, device, lock)
 end
 
+function on_device(f, cunit::DeviceUnit, @nospecialize(dummy_args::Vararg{Any,N})) where {N}
+    return on_device(f, get_device(cunit), dummy_args...)
+end
+
 
 struct _OnDevice{N,F,D,L<:Union{Nothing,ReentrantLock}} <: Function
     f_device::F
@@ -48,10 +53,10 @@ end
 
 
 function (f::_OnDevice{N})(args::Vararg{Any,N}) where {N}
-    dev_orig = get_device(args)
+    cunit_orig = get_compute_unit(args)
     adapted_args = adapt(f.device, args)
     result = _run_maybe_with_lock(f.f_device, f.lock, adapted_args...)
-    readapted_result = adapt(dev_orig, result)
+    readapted_result = adapt(cunit_orig, result)
     return readapted_result
 end
 
