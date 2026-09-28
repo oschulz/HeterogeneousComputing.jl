@@ -4,6 +4,7 @@ using HeterogeneousComputing
 using Test
 
 using MLDataDevices: CPUDevice
+using JLArrays: JLArray
 
 @testset "test_on_device" begin
     f(x, y) = sum(x .* y)
@@ -16,6 +17,8 @@ using MLDataDevices: CPUDevice
     x, y = rand(Float32, 10), rand(Float32, 10)
     @test @inferred(g(x, y)) ≈ f(x, y)
     @test_throws ArgumentError g(x)
+    # Arguments on different compute units:
+    @test_throws ArgumentError g(x, JLArray(y))
 
     h = on_device(f, CPUnit(), dummy_x, dummy_y)
     @test h(x, y) ≈ f(x, y)

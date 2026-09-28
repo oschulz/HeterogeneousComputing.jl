@@ -53,7 +53,7 @@ end
 
 
 function (f::_OnDevice{N})(args::Vararg{Any,N}) where {N}
-    cunit_orig = get_compute_unit(args)
+    cunit_orig = _check_orig_cunit(get_compute_unit(args))
     adapted_args = adapt(f.device, args)
     result = _run_maybe_with_lock(f.f_device, f.lock, adapted_args...)
     readapted_result = adapt(cunit_orig, result)
@@ -61,11 +61,16 @@ function (f::_OnDevice{N})(args::Vararg{Any,N}) where {N}
 end
 
 function (f::_OnDevice{N})(@nospecialize(args...)) where {N}
-    throw(
+    return throw(
         ArgumentError("on_device function was created for $N arguments, can't handle $(length(args)) arguments")
     )
 end
 
+
+_check_orig_cunit(cunit) = cunit
+function _check_orig_cunit(::MixedComputeSystem)
+    return throw(ArgumentError("on_device function arguments are on different compute units"))
+end
 
 @inline _run_maybe_with_lock(f, ::Nothing, args::Vararg{Any,N}) where {N} = f(args...)
 @inline _run_maybe_with_lock(f, lock::AbstractLock, args::Vararg{Any,N}) where {N} = @lock lock f(args...)
