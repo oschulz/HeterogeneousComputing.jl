@@ -111,6 +111,10 @@ A (possibly heterogenous) system of multiple compute units.
 struct MixedComputeSystem <: AbstractComputeUnit end
 export MixedComputeSystem
 
+function MLDataDevices.default_device_rng(::MixedComputeSystem)
+    return throw(ArgumentError("A MixedComputeSystem has no default random number generator"))
+end
+
 
 """
     merge_compute_units(compute_units...)
@@ -285,19 +289,30 @@ these are data movement policies, not properties of a compute unit. So units
 constructed from devices and units derived from data via
 [`get_compute_unit`](@ref) are equal.
 
+Throws an `ArgumentError` if the package that provides the device isn't
+loaded.
+
 `MLDataDevices.get_device(cunit)` returns the device.
 """
 struct DeviceUnit{D<:AbstractDevice} <: AbstractComputeUnit
     device::D
 
     function DeviceUnit(dev::AbstractDevice)
+        _device_loaded(dev) || throw(ArgumentError("Package for device $dev is not loaded"))
         canonical_dev = _canonical_device(dev)
         return new{typeof(canonical_dev)}(canonical_dev)
     end
 end
 export DeviceUnit
 
-_canonical_device(dev::AbstractDevice) = MLDataDevices.with_eltype(dev, nothing)
+_device_loaded(dev::AbstractDevice) = MLDataDevices.loaded(dev)
+
+_canonical_device(dev::AbstractDevice) = dev
+
+const _EltypeDevice = Union{CPUDevice,CUDADevice,AMDGPUDevice,MetalDevice,oneAPIDevice,OpenCLDevice,ReactantDevice}
+_canonical_device(dev::_EltypeDevice) = MLDataDevices.with_eltype(dev, nothing)
+
+Base.show(io::IO, cunit::DeviceUnit) = print(io, "DeviceUnit(", cunit.device, ")")
 
 AbstractComputeUnit(dev::AbstractDevice) = DeviceUnit(dev)
 Base.convert(::Type{AbstractComputeUnit}, dev::AbstractDevice) = DeviceUnit(dev)
@@ -307,12 +322,12 @@ MLDataDevices.default_device_rng(cunit::DeviceUnit) = _within_unit(() -> default
 
 Adapt.adapt_storage(cunit::DeviceUnit, x) = Adapt.adapt_storage(cunit.device, x)
 
-# Devices may contain handles that are equal but not identical, and devices
-# derived within traced code may specify their location only partially
-# (equal to any location), so units are compared via device equality and
-# hashed by device kind only:
-Base.:(==)(a::DeviceUnit, b::DeviceUnit) = a.device == b.device
+# Devices may contain handles that are equal but not identical, so units are
+# compared via device equality and hashed by device kind:
+Base.:(==)(a::DeviceUnit, b::DeviceUnit) = _same_device(a.device, b.device)
 Base.hash(cunit::DeviceUnit, h::UInt) = hash(Base.typename(typeof(cunit.device)), hash(DeviceUnit, h))
+
+_same_device(a::AbstractDevice, b::AbstractDevice) = a == b
 
 @inline _same_cunit(a::DeviceUnit, b::DeviceUnit) = a == b
 
@@ -376,5 +391,7 @@ Create an array of size `dims` on compute unit `cunit`, filled with `x`.
 function fill_array end
 export fill_array
 
-fill_array(cunit::AbstractComputeUnit, x, dims::Dims) = fill!(allocate_array(cunit, typeof(x), dims), x)
+function fill_array(cunit::AbstractComputeUnit, x, dims::Dims)
+    return _within_unit(() -> fill!(allocate_array(cunit, typeof(x), dims), x), cunit)
+end
 fill_array(cunit::AbstractComputeUnit, x, dims::Integer...) = fill_array(cunit, x, dims)

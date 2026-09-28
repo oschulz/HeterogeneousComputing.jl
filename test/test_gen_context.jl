@@ -6,6 +6,8 @@ using Test
 using Random
 using MLDataDevices: CPUDevice, cpu_device
 using JLArrays
+import GPUArrays
+using Adapt: adapt
 
 
 
@@ -43,6 +45,13 @@ using JLArrays
     @test @inferred(get_gencontext(rand(Float32, 7))) isa GenContext{Float32,CPUnit,RNG}
     @test @inferred(get_gencontext(42)) === HeterogeneousComputing.NoGenContext{Int}()
     @test get_gencontext("foo") === HeterogeneousComputing.NoGenContext{String}()
+    mixed_data = (rand(3), JLArray(rand(3)))
+    @test get_gencontext(mixed_data) === HeterogeneousComputing.NoGenContext{typeof(mixed_data)}()
+    @test_throws ArgumentError GenContext(MixedComputeSystem())
+
+    # Draws use the RNG of the context:
+    @test rand(GenContext(Xoshiro(1)), 3) == rand(Xoshiro(1), 3)
+    @test randn(GenContext{Float32}(Xoshiro(1))) == randn(Xoshiro(1), Float32)
 
     _check_array(A, ::Type{T}, sz::Dims{N}) where {T,N} = @test A isa AbstractArray{T,N} && size(A) == sz
 
@@ -50,7 +59,8 @@ using JLArrays
     _check_array(@inferred(allocate_array(ctx, 4, 5)), Float32, (4, 5))
     _check_array(@inferred(allocate_array(ctx, Float16, (4, 5))), Float16, (4, 5))
     _check_array(@inferred(allocate_array(ctx, Float16, 4, 5)), Float16, (4, 5))
-    @test @inferred(fill_array(ctx, 1.5f0, 2, 3)) == fill(1.5f0, 2, 3)
+    @test @inferred(fill_array(ctx, 1.5, 2, 3)) == fill(1.5f0, 2, 3)
+    @test @inferred(fill_array(ctx, true, 2)) == fill(true, 2)
 
     test_gencontext_draws(ctx)
     test_gencontext_draws(GenContext{Float64}(Xoshiro(123)))
@@ -62,6 +72,9 @@ using JLArrays
         @test GenContext{Float32}(get_rng(jl_ctx)) === jl_ctx
         @test get_gencontext(allocate_array(jl_ctx, 3)) isa GenContext{Float32,typeof(jl_unit)}
         test_gencontext_draws(jl_ctx)
+
+        @test adapt(jl_unit, GenContext{Float32}()) isa GenContext{Float32,typeof(jl_unit),<:GPUArrays.RNG}
+        @test get_compute_unit(adapt(CPUnit(), jl_ctx)) === CPUnit()
     end
 
     @testset "exponential from uniform variates" begin

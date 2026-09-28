@@ -6,13 +6,16 @@ import CUDA
 
 using HeterogeneousComputing
 import HeterogeneousComputing: ka_backend, allocate_array, get_total_memory, get_free_memory
-import HeterogeneousComputing: _canonical_device, _within_unit, _fill_random!, _draw_scalar, _randexp_from_rand!
+import HeterogeneousComputing: get_compute_unit_impl, _device_loaded, _canonical_device, _within_unit
 
-import Random
 using MLDataDevices: CUDADevice
 
 
 const CUDAUnit = DeviceUnit{<:CUDADevice}
+
+# MLDataDevices requires cuDNN to consider CUDA loaded, HeterogeneousComputing
+# doesn't:
+_device_loaded(::CUDADevice) = true
 
 _canonical_device(::CUDADevice{Nothing}) = _canonical_device(CUDADevice(CUDA.device()))
 
@@ -39,14 +42,9 @@ allocate_array(cunit::CUDAUnit, ::Type{T}, dims::Dims) where T = _within_unit(()
 ka_backend(::CUDAUnit) = CUDA.CUDABackend()
 
 
-# CUDA v5 has its own RNG type (CUDA v6 uses GPUArrays.RNG), with no
-# exponential or scalar draws:
-@static if pkgversion(CUDA) < v"6"
-    _fill_random!(::typeof(Random.randexp!), rng::CUDA.RNG, A::AbstractArray) = _randexp_from_rand!(rng, A)
-
-    function _draw_scalar(f!::F, rng::CUDA.RNG, ::Type{T}) where {F,T}
-        return Array(_fill_random!(f!, rng, CUDA.CuArray{T}(undef, 1)))[1]
-    end
+# MLDataDevices doesn't know the cuRAND RNGs of CUDA v6:
+@static if isdefined(CUDA, :cuRAND)
+    get_compute_unit_impl(::Union{CUDA.cuRAND.LibraryRNG,CUDA.cuRAND.NativeRNG}) = DeviceUnit(CUDADevice(CUDA.device()))
 end
 
 end # module HeterogeneousComputingCUDAExt

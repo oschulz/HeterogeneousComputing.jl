@@ -80,7 +80,11 @@ if no context can be determined for `x`.
 function get_gencontext end
 export get_gencontext
 
-get_gencontext(x) = _generic_get_gencontext(x, get_precision(x), get_compute_unit(x), get_rng(x))
+get_gencontext(x) = _generic_get_gencontext(x, get_precision(x), _gen_cunit(get_compute_unit(x)), get_rng(x))
+
+# Data on multiple compute units has no generative context:
+_gen_cunit(cunit) = cunit
+_gen_cunit(::MixedComputeSystem) = nothing
 
 function _generic_get_gencontext(
     @nospecialize(x),
@@ -106,14 +110,23 @@ get_gencontext(ctx::GenContext) = ctx
 
 
 get_precision_fromtype(::Type{<:GenContext{T}}) where T = T
-get_compute_unit(ctx::GenContext) = ctx.cunit
+get_compute_unit_impl(ctx::GenContext) = ctx.cunit
 get_rng(ctx::GenContext) = ctx.rng
+
+# Adapting a context to a compute unit or device moves it to that unit:
+function Adapt.adapt_structure(to, ctx::GenContext{T}) where T
+    return GenContext{T}(_adapted_cunit(to, ctx.cunit), adapt(to, ctx.rng))
+end
+
+_adapted_cunit(to::AbstractComputeUnit, ::AbstractComputeUnit) = to
+_adapted_cunit(to::AbstractDevice, ::AbstractComputeUnit) = DeviceUnit(to)
+_adapted_cunit(@nospecialize(to), cunit::AbstractComputeUnit) = cunit
 
 
 for (randfun, randfun!) in ((:rand, :rand!), (:randn, :randn!), (:randexp, :randexp!))
     @eval begin
         Random.$randfun(ctx::GenContext{T}) where T =
-            _within_unit(() -> _draw_scalar(Random.$randfun!, ctx.rng, T), ctx.cunit)
+            _within_unit(() -> _draw_scalar(Random.$randfun!, ctx.rng, T, ctx.cunit), ctx.cunit)
         Random.$randfun(ctx::GenContext{T}, dims::Dims) where T = Random.$randfun!(ctx, allocate_array(ctx, dims))
         Random.$randfun(ctx::GenContext, dim1::Integer, dims::Integer...) = Random.$randfun(ctx, (dim1, dims...))
         Random.$randfun!(ctx::GenContext, A::AbstractArray) =
@@ -121,9 +134,25 @@ for (randfun, randfun!) in ((:rand, :rand!), (:randn, :randn!), (:randexp, :rand
     end
 end
 
-# Specialize for RNGs that lack native implementations:
-_fill_random!(f!::F, rng::AbstractRNG, A::AbstractArray) where {F} = f!(rng, A)
-_draw_scalar(f!::F, rng::AbstractRNG, ::Type{T}) where {F,T} = _scalar_randfun(f!)(rng, T)
+# Random number generation rules, first specific to the RNG, then specific
+# to the array:
+_fill_random!(f!::F, rng::AbstractRNG, A::AbstractArray) where {F} = _fill_random_array!(f!, rng, A)
+
+_fill_random_array!(f!::F, rng::AbstractRNG, A::AbstractArray) where {F} = f!(rng, A)
+# GPU RNGs provide no exponential variates:
+function _fill_random_array!(::typeof(Random.randexp!), rng::AbstractRNG, A::GPUArraysCore.AbstractGPUArray)
+    return _randexp_from_rand!(rng, A)
+end
+
+function _draw_scalar(f!::F, rng::AbstractRNG, ::Type{T}, cunit::AbstractComputeUnit) where {F,T}
+    return is_host_unit(cunit) ? _scalar_randfun(f!)(rng, T)::T : _draw_scalar_via_array(f!, rng, T, cunit)
+end
+
+# GPU RNGs typically don't support scalar draws:
+function _draw_scalar_via_array(f!::F, rng::AbstractRNG, ::Type{T}, cunit::AbstractComputeUnit) where {F,T}
+    A = _fill_random!(f!, rng, allocate_array(cunit, T, (1,)))
+    return only(Array(A))::T
+end
 
 _scalar_randfun(::typeof(Random.rand!)) = Random.rand
 _scalar_randfun(::typeof(Random.randn!)) = Random.randn
@@ -156,6 +185,11 @@ The default element type can be overriden by specifying `T`.
     fill_array(ctx::GenContext, x, dims::Integer...)
 
 Create an array of size `dims` on the compute unit of `ctx`, filled with `x`.
+
+Floating point values are converted to the precision of `ctx`.
 """
-@inline fill_array(ctx::GenContext, x, dims::Dims) = fill_array(ctx.cunit, x, dims)
-@inline fill_array(ctx::GenContext, x, dims::Integer...) = fill_array(ctx.cunit, x, dims)
+@inline fill_array(ctx::GenContext{T}, x, dims::Dims) where T = fill_array(ctx.cunit, _gen_convert(T, x), dims)
+@inline fill_array(ctx::GenContext, x, dims::Integer...) = fill_array(ctx, x, dims)
+
+_gen_convert(::Type{T}, x::AbstractFloat) where T = convert(T, x)
+_gen_convert(::Type, x) = x

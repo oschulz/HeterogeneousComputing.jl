@@ -11,6 +11,7 @@ The resulting function will only accept the same kind and number of arguments
 as `dummy_args`. It will automatically adapt the arguments to the target
 device, and adapt the function result back to the original device of the
 arguments. Depending on the device, `dummy_args` may or may not be used.
+Arguments on different compute units are not supported.
 
 Example:
 

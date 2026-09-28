@@ -54,7 +54,7 @@ function _get_precision_from_fieldtypes(::Type{T}, ftypes::Tuple) where T
     return promote_type(map(get_precision_fromtype, ftypes)...)
 end
 
-get_precision_fromtype(::Type{T}) where {T<:AbstractFloat} = T
+get_precision_fromtype(::Type{T}) where {T<:AbstractFloat} = isconcretetype(T) ? T : NoPrecision{T}
 get_precision_fromtype(::Type{Tuple{}}) = NoPrecision{Tuple{}}
 get_precision_fromtype(::Type{T}) where {T<:Integer} = NoPrecision{T}
 get_precision_fromtype(::Type{T}) where {T<:Union{AbstractString,Symbol}} = NoPrecision{T}

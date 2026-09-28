@@ -11,6 +11,7 @@ using Random
 using Base: AbstractLock
 
 using MLDataDevices: MLDataDevices, AbstractDevice, CPUDevice, UnknownDevice
+using MLDataDevices: CUDADevice, AMDGPUDevice, MetalDevice, oneAPIDevice, OpenCLDevice, ReactantDevice
 using MLDataDevices: get_device, default_device_rng
 using Adapt: Adapt, adapt
 import GPUArraysCore
