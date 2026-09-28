@@ -6,15 +6,24 @@
 
 Supertype for arbitrary compute units (CPU, GPU, etc.).
 
-`adapt(cunit::AbstractComputeUnit, x)` adapts `x` for `cunit`.
+Most compute units are [`DeviceUnit`](@ref)s, which are based on
+`MLDataDevices` devices. `AbstractComputeUnit(dev::MLDataDevices.AbstractDevice)`
+returns the compute unit for a device.
+
+`adapt(cunit::AbstractComputeUnit, x)` adapts `x` for `cunit`, without
+changing the numerical precision of `x`.
 
 `get_total_memory(cunit)` and `get_free_memory(cunit)` return the total
-resp. the free memory on the compute unit.
+resp. the free memory on the compute unit (currently only supported for the
+CPU, CUDA and JLArrays).
 
-[`allocate_array(cunit, dims)`](@ref) can be used to allocate new arrays
-on `cunit`.
+[`allocate_array(cunit, T, dims)`](@ref) and [`fill_array(cunit, x, dims)`](@ref)
+can be used to create new arrays on `cunit`.
 
-`KernelAbstractions.Backend(cunit)` will return default
+`MLDataDevices.default_device_rng(cunit)` returns the default random number
+generator for `cunit`.
+
+`KernelAbstractions.Backend(cunit)` will return the default
 [KernelAbstractions](https://github.com/JuliaGPU/KernelAbstractions.jl)
 backend for the type of the compute unit.
 
@@ -34,12 +43,24 @@ export get_total_memory
 
 
 """
-get_free_memory(cunit::AbstractComputeUnit)
+    get_free_memory(cunit::AbstractComputeUnit)
 
 Get the amount of free memory available on `cunit`.
 """
 function get_free_memory end
 export get_free_memory
+
+
+"""
+    is_host_unit(cunit::AbstractComputeUnit)::Bool
+
+Whether arrays on `cunit` can be processed by generic host code, e.g. via
+scalar indexing.
+"""
+function is_host_unit end
+export is_host_unit
+
+is_host_unit(::AbstractComputeUnit) = false
 
 
 """
@@ -74,7 +95,7 @@ export ComputeUnitIndependent
 """
     UnknownComputeUnitOf(x)
 
-`get_compute_unit(x) === ComputeUnitIndependent()` indicates
+`get_compute_unit(x) === UnknownComputeUnitOf(x)` indicates
 that the compute unit for `x` cannot be determined.
 """
 struct UnknownComputeUnitOf{T}
@@ -89,6 +110,10 @@ A (possibly heterogenous) system of multiple compute units.
 """
 struct MixedComputeSystem <: AbstractComputeUnit end
 export MixedComputeSystem
+
+function MLDataDevices.default_device_rng(::MixedComputeSystem)
+    return throw(ArgumentError("A MixedComputeSystem has no default random number generator"))
+end
 
 
 """
@@ -114,11 +139,13 @@ end
 @inline merge_compute_units(a::Any, b::UnknownComputeUnitOf) = b
 
 @inline function merge_compute_units(a, b)
-    return (a === b) ? a : compute_unit_mergeresult(
+    return _same_cunit(a, b) ? a : compute_unit_mergeresult(
         compute_unit_mergerule(a, b),
         compute_unit_mergerule(b, a)
     )
 end
+
+@inline _same_cunit(a, b) = a === b
 
 struct NoCUnitMergeRule end
 
@@ -142,102 +169,233 @@ struct NoCUnitMergeRule end
 
 Get the compute unit backing object `x`.
 
+Unless there is a specific rule for objects of type `typeof(x)` (see
+[`HeterogeneousComputing.get_compute_unit_impl`](@ref)), `get_compute_unit`
+recurses through the fields of `x` and merges their compute units via
+[`merge_compute_units`](@ref). Reference loops are handled.
+
+The compute units of GPU arrays and random number generators are based on
+`MLDataDevices.get_device`.
+
 Don't specialize `get_compute_unit`, specialize
 [`HeterogeneousComputing.get_compute_unit_impl`](@ref) instead.
 """
 function get_compute_unit end
 export get_compute_unit
 
-get_compute_unit(x) = get_compute_unit_impl(Union{}, x)
-get_compute_unit(cunit::AbstractComputeUnit) = cunit
+get_compute_unit(x) = _get_cunit(x, nothing)
 
 
 """
-    HeterogeneousComputing.get_compute_unit_impl(::Type{TypeHistory}, x)::AbstractComputeUnit
+    HeterogeneousComputing.get_compute_unit_impl(x)
 
-See [`get_compute_unit_impl`](@ref).
+Specialize `get_compute_unit_impl(x::SomeType)` to directly return the
+compute unit of objects of type `SomeType`, instead of recursing through
+their fields.
 
-Specializations that directly resolve the compute unit based on `x` can
-ignore `TypeHistory`:
-
-```julia
-HeterogeneousComputing.get_compute_unit_impl(@nospecialize(TypeHistory::Type), x::SomeType) = ...
-```
+See [`get_compute_unit`](@ref).
 """
 function get_compute_unit_impl end
 
+struct _RecurseFields end
 
-# Guard against object reference loops:
-@inline get_compute_unit_impl(::Type{TypeHistory}, x::T) where {TypeHistory,T<:TypeHistory} = begin
-    UnknownComputeUnitOf(x)
+get_compute_unit_impl(@nospecialize(x)) = _RecurseFields()
+get_compute_unit_impl(cunit::AbstractComputeUnit) = cunit
+get_compute_unit_impl(@nospecialize(T::Type)) = ComputeUnitIndependent()
+
+
+# `visited` is `nothing` or an `IdSet` of visited objects that may be part of
+# reference loops:
+@inline _get_cunit(x, visited) = _get_cunit_via(get_compute_unit_impl(x), x, visited)
+
+@inline _get_cunit_via(cunit, @nospecialize(x), @nospecialize(visited)) = cunit
+@inline _get_cunit_via(::_RecurseFields, x, visited) = _get_fields_cunit(x, visited)
+
+# The recursion through fields of concrete types is inlined into a single
+# generated function body, since inference would give up on recursive calls
+# of the same method with nested types:
+@generated function _get_fields_cunit(x, visited)
+    body = Expr(:block)
+    if _may_close_ref_loop(x)
+        push!(body.args, :(visited = _visit!(visited, x)))
+        push!(body.args, :(visited isa _AlreadyVisited && return ComputeUnitIndependent()))
+    end
+    push!(body.args, _fields_cunit_expr(x, :x, :visited, 0))
+    return body
 end
 
-@generated function get_compute_unit_impl(::Type{TypeHistory}, x) where TypeHistory
-    if isbitstype(x)
-        :(ComputeUnitIndependent())
+const _max_inline_depth = 8
+
+function _fields_cunit_expr(@nospecialize(T::Type), xex, vex, depth::Int)
+    isbitstype(T) && return :(ComputeUnitIndependent())
+    # Types that may close reference loops need to be tracked:
+    depth > 0 && _may_close_ref_loop(T) && return :(_get_fields_cunit($xex, $vex))
+    body = Expr(:block)
+    cunit = gensym(:cunit)
+    push!(body.args, :($cunit = ComputeUnitIndependent()))
+    for i in 1:fieldcount(T)
+        FT = fieldtype(T, i)
+        f = gensym(:field)
+        fcunit = Expr(:let, :($f = getfield($xex, $i)), _field_cunit_expr(FT, f, vex, depth))
+        if ismutabletype(T) && !isbitstype(FT)
+            fcunit = :(isdefined($xex, $i) ? $fcunit : ComputeUnitIndependent())
+        end
+        new_cunit = gensym(:cunit)
+        push!(body.args, :($new_cunit = merge_compute_units($fcunit, $cunit)))
+        cunit = new_cunit
+    end
+    push!(body.args, cunit)
+    return body
+end
+
+function _field_cunit_expr(@nospecialize(FT::Type), f::Symbol, vex, depth::Int)
+    if !isconcretetype(FT) || _has_cunit_rule(FT) || depth >= _max_inline_depth
+        return :(_get_cunit($f, $vex))
     else
-        NewTypeHistory = Union{TypeHistory,x}
-        impl = :(
-            begin
-                dev_0 = ComputeUnitIndependent()
-            end
-        )
-        append!(
-            impl.args,
-            [
-                :(
-                    $(Symbol(:dev_, i)) = merge_compute_units(
-                        get_compute_unit_impl($NewTypeHistory, getfield(x, $i)),
-                        $(Symbol(:dev_, i - 1))
-                    )
-                ) for i in 1:fieldcount(x)
-            ]
-        )
-        push!(impl.args, :(return $(Symbol(:dev_, fieldcount(x)))))
-        impl
+        rule = gensym(:rule)
+        return quote
+            $rule = get_compute_unit_impl($f)
+            $rule isa _RecurseFields ? $(_fields_cunit_expr(FT, f, vex, depth + 1)) : $rule
+        end
     end
 end
 
+# Types with compute unit rules in HeterogeneousComputing itself, no need to
+# inline recursion code for them:
+function _has_cunit_rule(@nospecialize(T::Type))
+    return T <: Union{Type,Array,AbstractComputeUnit,GPUArraysCore.AbstractGPUArray,AbstractRNG,GenContext} ||
+           (isdefined(Core, :Memory) && T <: Core.Memory)
+end
+
+# Whether objects of type T may be part of a reference loop. Loops need a
+# mutable object that can reach itself: either via fields of non-concrete
+# type or via concretely typed fields only.
+function _may_close_ref_loop(@nospecialize(T::Type))
+    ismutabletype(T) || return false
+    seen = Set{Any}()
+    pending = Any[fieldtypes(T)...]
+    while !isempty(pending)
+        FT = pop!(pending)
+        isbitstype(FT) && continue
+        (!isconcretetype(FT) || FT === T) && return true
+        FT in seen && continue
+        push!(seen, FT)
+        append!(pending, fieldtypes(FT))
+    end
+    return false
+end
+
+struct _AlreadyVisited end
+
+_visit!(::Nothing, x) = _visit!(IdSet{Any}(), x)
+_visit!(visited::IdSet{Any}, x) = x in visited ? _AlreadyVisited() : push!(visited, x)
+
+
+@inline get_compute_unit_impl(A::GPUArraysCore.AbstractGPUArray) = _gpu_array_cunit(get_device(A), A)
+
+_gpu_array_cunit(dev::AbstractDevice, @nospecialize(A)) = DeviceUnit(dev)
+# MLDataDevices considers arrays of unknown type to be CPU arrays:
+_gpu_array_cunit(::Union{CPUDevice,UnknownDevice,Nothing}, A) = UnknownComputeUnitOf(A)
+
+# RNGs without a known device may still hold device state:
+@inline get_compute_unit_impl(rng::AbstractRNG) = _rng_cunit(get_device(rng))
+
+_rng_cunit(dev::AbstractDevice) = DeviceUnit(dev)
+_rng_cunit(::Union{UnknownDevice,Nothing}) = _RecurseFields()
+
 
 
 """
-    struct CPUnit <: AbstractComputeUnit
+    struct DeviceUnit{D<:MLDataDevices.AbstractDevice} <: AbstractComputeUnit
+
+A compute unit based on an `MLDataDevices` device.
+
+Constructors:
+
+```julia
+DeviceUnit(dev::MLDataDevices.AbstractDevice)
+AbstractComputeUnit(dev::MLDataDevices.AbstractDevice)
+```
+
+The device is normalized on construction: The unit has no element type
+(`adapt(cunit, x)` preserves numerical precision, use a [`GenContext`](@ref)
+to specify precision), and a device that refers to the currently active
+device (e.g. `CUDADevice()`) is resolved to that specific device. Reactant
+units also drop sharding and number tracking settings, like element types
+these are data movement policies, not properties of a compute unit. So units
+constructed from devices and units derived from data via
+[`get_compute_unit`](@ref) are equal.
+
+Throws an `ArgumentError` if the package that provides the device isn't
+loaded.
+
+`MLDataDevices.get_device(cunit)` returns the device.
+"""
+struct DeviceUnit{D<:AbstractDevice} <: AbstractComputeUnit
+    device::D
+
+    function DeviceUnit(dev::AbstractDevice)
+        _device_loaded(dev) || throw(ArgumentError("Package for device $dev is not loaded"))
+        canonical_dev = _canonical_device(dev)
+        return new{typeof(canonical_dev)}(canonical_dev)
+    end
+end
+export DeviceUnit
+
+_device_loaded(dev::AbstractDevice) = MLDataDevices.loaded(dev)
+
+_canonical_device(dev::AbstractDevice) = dev
+
+const _EltypeDevice = Union{CPUDevice,CUDADevice,AMDGPUDevice,MetalDevice,oneAPIDevice,OpenCLDevice,ReactantDevice}
+_canonical_device(dev::_EltypeDevice) = MLDataDevices.with_eltype(dev, nothing)
+
+Base.show(io::IO, cunit::DeviceUnit) = print(io, "DeviceUnit(", cunit.device, ")")
+
+AbstractComputeUnit(dev::AbstractDevice) = DeviceUnit(dev)
+Base.convert(::Type{AbstractComputeUnit}, dev::AbstractDevice) = DeviceUnit(dev)
+
+MLDataDevices.get_device(cunit::DeviceUnit) = cunit.device
+MLDataDevices.default_device_rng(cunit::DeviceUnit) = _within_unit(() -> default_device_rng(cunit.device), cunit)
+
+Adapt.adapt_storage(cunit::DeviceUnit, x) = Adapt.adapt_storage(cunit.device, x)
+
+# Devices may contain handles that are equal but not identical, so units are
+# compared via device equality and hashed by device kind:
+Base.:(==)(a::DeviceUnit, b::DeviceUnit) = _same_device(a.device, b.device)
+Base.hash(cunit::DeviceUnit, h::UInt) = hash(Base.typename(typeof(cunit.device)), hash(DeviceUnit, h))
+
+_same_device(a::AbstractDevice, b::AbstractDevice) = a == b
+
+@inline _same_cunit(a::DeviceUnit, b::DeviceUnit) = a == b
+
+
+"""
+    const CPUnit = DeviceUnit{MLDataDevices.CPUDevice{Nothing}}
 
 `CPUnit()` is the default central processing unit (CPU).
 """
-struct CPUnit <: AbstractComputeUnit end
+const CPUnit = DeviceUnit{CPUDevice{Nothing}}
 export CPUnit
 
-Adapt.adapt_storage(::CPUnit, x::AbstractArray) = Adapt.adapt(Array, x)
+(::Type{CPUnit})() = DeviceUnit(CPUDevice())
+
+Base.show(io::IO, ::CPUnit) = print(io, "CPUnit()")
+
+is_host_unit(::CPUnit) = true
 
 get_total_memory(::CPUnit) = Sys.total_memory()
 get_free_memory(::CPUnit) = Sys.free_memory()
 
-@inline get_compute_unit_impl(@nospecialize(TypeHistory::Type), ::Array) = CPUnit()
+@inline get_compute_unit_impl(::Array) = CPUnit()
+@static if isdefined(Core, :Memory)
+    @inline get_compute_unit_impl(::Memory) = CPUnit()
+end
 
 
 
 """
-    abstract type AbstractComputeAccelerator <: AbstractComputeUnit
-
-Supertype for GPU compute units.
-"""
-abstract type AbstractComputeAccelerator <: AbstractComputeUnit end
-export AbstractComputeAccelerator
-
-
-"""
-    abstract type AbstractGPUnit <: AbstractComputeAccelerator
-
-Supertype for GPU comute units.
-"""
-abstract type AbstractGPUnit <: AbstractComputeAccelerator end
-export AbstractGPUnit
-
-
-"""
-    allocate_array(cpunit::AbstractComputeUnit, ::Type{T}, dims::Dims)
-    allocate_array(cpunit::AbstractComputeUnit, ::Type{T}, dims::Integer...)
+    allocate_array(cunit::AbstractComputeUnit, ::Type{T}, dims::Dims)
+    allocate_array(cunit::AbstractComputeUnit, ::Type{T}, dims::Integer...)
 
 Allocate a new array with element type `T` and size `dims` on compute unit
 `cunit`.
@@ -247,6 +405,30 @@ The content of the newly allocated array is undefined.
 function allocate_array end
 export allocate_array
 
-allocate_array(cpunit::AbstractComputeUnit, ::Type{T}, dims::Integer...) where T = allocate_array(cpunit, T, dims)
+allocate_array(cunit::AbstractComputeUnit, ::Type{T}, dims::Integer...) where T = allocate_array(cunit, T, dims)
 
 allocate_array(::CPUnit, ::Type{T}, dims::Dims) where T = Array{T}(undef, dims)
+
+# Run `f` with `cunit` as the active device of its backend (for backends
+# with a notion of an active device):
+_within_unit(f, @nospecialize(cunit::AbstractComputeUnit)) = f()
+
+# Generic fallback, avoids transferring data from the host:
+function allocate_array(cunit::DeviceUnit, ::Type{T}, dims::Dims) where T
+    return _within_unit(() -> similar(adapt(cunit, Vector{T}()), dims), cunit)
+end
+
+
+"""
+    fill_array(cunit::AbstractComputeUnit, x, dims::Dims)
+    fill_array(cunit::AbstractComputeUnit, x, dims::Integer...)
+
+Create an array of size `dims` on compute unit `cunit`, filled with `x`.
+"""
+function fill_array end
+export fill_array
+
+function fill_array(cunit::AbstractComputeUnit, x, dims::Dims)
+    return _within_unit(() -> fill!(allocate_array(cunit, typeof(x), dims), x), cunit)
+end
+fill_array(cunit::AbstractComputeUnit, x, dims::Integer...) = fill_array(cunit, x, dims)

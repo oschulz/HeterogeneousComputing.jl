@@ -5,94 +5,46 @@ module HeterogeneousComputingCUDAExt
 import CUDA
 
 using HeterogeneousComputing
-import HeterogeneousComputing: ka_backend
+import HeterogeneousComputing: ka_backend, allocate_array, get_total_memory, get_free_memory
+import HeterogeneousComputing: get_compute_unit_impl, _device_loaded, _canonical_device, _within_unit
 
-import Adapt
-
-using MLDataDevices: MLDataDevices
-
-
-"""
-    struct CUDAUnit <: AbstractGPUnit
-
-A CUDA-compatible GPU compute unit.
-
-Constructors
-
-```julia
-CUDAUnit(device_number::Integer)
-CUDAUnit(dev::CUDA.CUDA.CuDevice)
-```
-"""
-struct CUDAUnit <: AbstractGPUnit
-    devhandle::Int
-end
+using MLDataDevices: CUDADevice
 
 
-CUDAUnit(dev::CUDA.CuDevice) = CUDAUnit(dev.handle)
+const CUDAUnit = DeviceUnit{<:CUDADevice}
+
+# MLDataDevices requires cuDNN to consider CUDA loaded, HeterogeneousComputing
+# doesn't:
+_device_loaded(::CUDADevice) = true
+
+_canonical_device(::CUDADevice{Nothing}) = _canonical_device(CUDADevice(CUDA.device()))
+
+HeterogeneousComputing.AbstractComputeUnit(dev::CUDA.CuDevice) = DeviceUnit(CUDADevice(dev))
+Base.convert(::Type{AbstractComputeUnit}, dev::CUDA.CuDevice) = AbstractComputeUnit(dev)
+
+_cudevice(cunit::CUDAUnit) = cunit.device.device
 
 
-HeterogeneousComputing.AbstractComputeUnit(dev::CUDA.CuDevice) = CUDAUnit(dev.handle)
-Base.convert(::Type{AbstractComputeUnit}, dev::CUDA.CuDevice) = CUDAUnit(dev)
+get_total_memory(cunit::CUDAUnit) = CUDA.totalmem(_cudevice(cunit))
 
-CUDA.CuDevice(cunit::CUDAUnit) = CUDA.CuDevice(cunit.devhandle)
-Base.convert(::Type{CUDA.CuDevice}, cunit::CUDAUnit) = CUDA.CuDevice(cunit)
-
-function HeterogeneousComputing.get_compute_unit_impl(@nospecialize(TypeHistory::Type), A::CUDA.CuArray)
-    return CUDAUnit(CUDA.device(A))
-end
-
-for sym in
-    [:AbstractCuSparseVector, :AbstractCuSparseMatrix, :AbstractCuSparseArray, :CuSparseMatrixCSC, :CuSparseMatrixCSR]
-    if isdefined(CUDA.CUSPARSE, sym)
-        @eval function HeterogeneousComputing.get_compute_unit_impl(
-            @nospecialize(TypeHistory::Type), A::CUDA.CUSPARSE.$sym
-        )
-            return CUDAUnit(MLDataDevices.get_device(A).device)
-        end
-    end
-end
-
-
-HeterogeneousComputing.get_total_memory(cunit::CUDAUnit) = CUDA.totalmem(CUDA.CuDevice(cunit))
-
-function HeterogeneousComputing.get_free_memory(cunit::CUDAUnit)
+function get_free_memory(cunit::CUDAUnit)
     @static if isdefined(CUDA, :free_memory)
-        return unsigned(CUDA.device!(CUDA.free_memory, CUDA.CuDevice(cunit)))
+        return unsigned(CUDA.device!(CUDA.free_memory, _cudevice(cunit)))
     else
-        return unsigned(CUDA.device!(CUDA.available_memory, CUDA.CuDevice(cunit)))
+        return unsigned(CUDA.device!(CUDA.available_memory, _cudevice(cunit)))
     end
 end
 
+_within_unit(f, cunit::CUDAUnit) = CUDA.device!(f, _cudevice(cunit))
 
-function Adapt.adapt_storage(cunit::CUDAUnit, x)
-    oldhandle = CUDA.device().handle
-    try
-        oldhandle != cunit.devhandle && CUDA.device!(cunit.devhandle)
-        Adapt.adapt(CUDA.CuArray, x)
-    finally
-        oldhandle != cunit.devhandle && CUDA.device!(oldhandle)
-    end
-end
+allocate_array(cunit::CUDAUnit, ::Type{T}, dims::Dims) where T = _within_unit(() -> CUDA.CuArray{T}(undef, dims), cunit)
+
+ka_backend(::CUDAUnit) = CUDA.CUDABackend()
 
 
-function HeterogeneousComputing.allocate_array(cunit::CUDAUnit, ::Type{T}, dims::Dims) where T
-    oldhandle = CUDA.device().handle
-    try
-        oldhandle != cunit.devhandle && CUDA.device!(cunit.devhandle)
-        CUDA.CuArray{T}(undef, dims)
-    finally
-        oldhandle != cunit.devhandle && CUDA.device!(oldhandle)
-    end
-end
-
-
-
-# Requires KernelAbstractions v0.9 and CUDA v4:
-@static if isdefined(CUDA, :CUDABackend)
-    ka_backend(::CUDAUnit) = CUDA.CUDABackend()
-    CUDA.CUDABackend(cunit::CUDAUnit) = ka_backend(cunit)
-    Base.convert(::Type{CUDA.CUDABackend}, cunit::CUDAUnit) = ka_backend(cunit)
+# MLDataDevices doesn't know the cuRAND RNGs of CUDA v6:
+@static if isdefined(CUDA, :cuRAND)
+    get_compute_unit_impl(::Union{CUDA.cuRAND.LibraryRNG,CUDA.cuRAND.NativeRNG}) = DeviceUnit(CUDADevice(CUDA.device()))
 end
 
 end # module HeterogeneousComputingCUDAExt
