@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Home · HeterogeneousComputing</title><script data-outdated-warner src="assets/warner.js"></script><link rel="canonical" href="https://oschulz.github.io/HeterogeneousComputing.jl/stable/"/><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.045/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.13.24/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="assets/documenter.js"></script><script src="siteinfo.js"></script><script src="../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit"><a href>HeterogeneousComputing</a></span></div><form class="docs-search" action="search/"><input class="docs-search-query" id="documenter-search-query" name="q" type="text" placeholder="Search docs"/></form><ul class="docs-menu"><li class="is-active"><a class="tocitem" href>Home</a><ul class="internal"><li class="toplevel"><a class="tocitem" href="#Support-for-KernelAbstractions"><span>Support for KernelAbstractions</span></a></li></ul></li><li><a class="tocitem" href="api/">API</a></li><li><a class="tocitem" href="LICENSE/">LICENSE</a></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><nav class="breadcrumb"><ul class="is-hidden-mobile"><li class="is-active"><a href>Home</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Home</a></li></ul></nav><div class="docs-right"><a class="docs-edit-link" href="https://github.com/oschulz/HeterogeneousComputing.jl/blob/main/docs/src/index.md" title="Edit on GitHub"><span class="docs-icon fab"></span><span class="docs-label is-hidden-touch">Edit on GitHub</span></a><a class="docs-settings-button fas fa-cog" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-sidebar-button fa fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a></div></header><article class="content" id="documenter-page"><h1 id="HeterogeneousComputing.jl"><a class="docs-heading-anchor" href="#HeterogeneousComputing.jl">HeterogeneousComputing.jl</a><a id="HeterogeneousComputing.jl-1"></a><a class="docs-heading-anchor-permalink" href="#HeterogeneousComputing.jl" title="Permalink"></a></h1><p>HeterogeneousComputing.jl provides tools to ease heterogeneous computing in Julia.</p><p>Currently only CPU and CUDA units are supports, support for AMDGPU, oneAPI and Metal will be added as well.</p><p>The package provides <a href="api/#HeterogeneousComputing.AbstractComputeUnit"><code>AbstractComputeUnit</code></a> and <a href="api/#HeterogeneousComputing.GenContext"><code>GenContext</code></a> which allow for determining which compute unit given content is currently located on, moving it to other compute units, and generating new data on specific compute units.</p><p>The idea is that a <code>AbstractComputeUnit</code> or an <code>AbstractComputeUnit</code> (which compines a compute unit with a random number generator and a desired numerical precision) can be passed around and propagate through an application, so that the computational context is always available.</p><p>Example:</p><pre><code class="language-julia hljs">using HeterogeneousComputing
+using Random, Adapt, CUDA, StructArrays, Tables
+
+# Generate some data on a GPU:
+cpu_data = StructArray((
+    a = rand(Float32, 1000),
+    b = rand(Float32, 1000),
+))
+
+# Verify data is on GPU:
+cpu_unit = CPUnit()
+get_compute_unit(cpu_data) == cpu_unit
+
+# Get compute unit for the current CUDA device:
+gpu_unit = AbstractComputeUnit(CUDA.device())
+
+# Move the data to the GPU:
+
+gpu_data = adapt(gpu_unit, cpu_data)
+
+# Specify a context for content generation.
+
+gpu_ctx = GenContext{Float32}(gpu_unit)
+
+# Generate a new data column on the GPU and add it to the data. A context
+# is also an `AbstractRNG`, so we can generate random data of the desired
+# numerical precision on the chosed unit very conventiently:
+
+c = rand!(allocate_array(gpu_ctx, 1000))
+d = rand(gpu_ctx, 1000)
+
+new_gpu_data = new_gpu_data = StructArray(
+    merge(Tables.columns(gpu_data), (c = c, d = c))
+)
+
+# Move the data back to the CPU:
+
+new_cpu_data = adapt(cpu_unit, new_gpu_data)</code></pre><h1 id="Support-for-KernelAbstractions"><a class="docs-heading-anchor" href="#Support-for-KernelAbstractions">Support for KernelAbstractions</a><a id="Support-for-KernelAbstractions-1"></a><a class="docs-heading-anchor-permalink" href="#Support-for-KernelAbstractions" title="Permalink"></a></h1><p>HeterogeneousComputing also has support for <a href="https://github.com/JuliaGPU/KernelAbstractions.jl"><code>KernelAbstractions</code></a>, a <code>KernelAbstractions.Backend</code> can be derived from an <code>AbstractComputeUnit</code>:</p><pre><code class="language-julia hljs">using KernelAbstractions
+ka_backend = KernelAbstractions.Backend(gpu_unit)</code></pre><p>This way, KernelAbstractions backends don&#39;t need to be tracked independently through a an application.</p></article><nav class="docs-footer"><a class="docs-footer-nextpage" href="api/">API »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 0.27.25 on <span class="colophon-date" title="Tuesday 4 July 2023 22:36">Tuesday 4 July 2023</span>. Using Julia version 1.9.1.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
