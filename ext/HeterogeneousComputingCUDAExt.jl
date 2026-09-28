@@ -6,7 +6,7 @@ import CUDA
 
 using HeterogeneousComputing
 import HeterogeneousComputing: ka_backend, allocate_array, get_total_memory, get_free_memory
-import HeterogeneousComputing: _canonical_device, _fill_random!, _draw_scalar, _randexp_from_rand!
+import HeterogeneousComputing: _canonical_device, _within_unit, _fill_random!, _draw_scalar, _randexp_from_rand!
 
 import Random
 using MLDataDevices: CUDADevice
@@ -32,9 +32,9 @@ function get_free_memory(cunit::CUDAUnit)
     end
 end
 
-function allocate_array(cunit::CUDAUnit, ::Type{T}, dims::Dims) where T
-    return CUDA.device!(() -> CUDA.CuArray{T}(undef, dims), _cudevice(cunit))
-end
+_within_unit(f, cunit::CUDAUnit) = CUDA.device!(f, _cudevice(cunit))
+
+allocate_array(cunit::CUDAUnit, ::Type{T}, dims::Dims) where T = _within_unit(() -> CUDA.CuArray{T}(undef, dims), cunit)
 
 ka_backend(::CUDAUnit) = CUDA.CUDABackend()
 

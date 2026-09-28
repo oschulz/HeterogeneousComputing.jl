@@ -14,7 +14,8 @@ returns the compute unit for a device.
 changing the numerical precision of `x`.
 
 `get_total_memory(cunit)` and `get_free_memory(cunit)` return the total
-resp. the free memory on the compute unit.
+resp. the free memory on the compute unit (currently only supported for the
+CPU, CUDA and JLArrays).
 
 [`allocate_array(cunit, T, dims)`](@ref) and [`fill_array(cunit, x, dims)`](@ref)
 can be used to create new arrays on `cunit`.
@@ -251,7 +252,9 @@ AbstractComputeUnit(dev::MLDataDevices.AbstractDevice)
 The device is normalized on construction: The unit has no element type
 (`adapt(cunit, x)` preserves numerical precision, use a [`GenContext`](@ref)
 to specify precision), and a device that refers to the currently active
-device (e.g. `CUDADevice()`) is resolved to that specific device. So units
+device (e.g. `CUDADevice()`) is resolved to that specific device. Reactant
+units also drop sharding and number tracking settings, like element types
+these are data movement policies, not properties of a compute unit. So units
 constructed from devices and units derived from data via
 [`get_compute_unit`](@ref) are equal.
 
@@ -273,7 +276,7 @@ AbstractComputeUnit(dev::AbstractDevice) = DeviceUnit(dev)
 Base.convert(::Type{AbstractComputeUnit}, dev::AbstractDevice) = DeviceUnit(dev)
 
 MLDataDevices.get_device(cunit::DeviceUnit) = cunit.device
-MLDataDevices.default_device_rng(cunit::DeviceUnit) = default_device_rng(cunit.device)
+MLDataDevices.default_device_rng(cunit::DeviceUnit) = _within_unit(() -> default_device_rng(cunit.device), cunit)
 
 Adapt.adapt_storage(cunit::DeviceUnit, x) = Adapt.adapt_storage(cunit.device, x)
 
@@ -324,9 +327,13 @@ allocate_array(cunit::AbstractComputeUnit, ::Type{T}, dims::Integer...) where T 
 
 allocate_array(::CPUnit, ::Type{T}, dims::Dims) where T = Array{T}(undef, dims)
 
+# Run `f` with `cunit` as the active device of its backend (for backends
+# with a notion of an active device):
+_within_unit(f, @nospecialize(cunit::AbstractComputeUnit)) = f()
+
 # Generic fallback, avoids transferring data from the host:
 function allocate_array(cunit::DeviceUnit, ::Type{T}, dims::Dims) where T
-    return similar(adapt(cunit, Vector{T}()), dims)
+    return _within_unit(() -> similar(adapt(cunit, Vector{T}()), dims), cunit)
 end
 
 

@@ -112,10 +112,12 @@ get_rng(ctx::GenContext) = ctx.rng
 
 for (randfun, randfun!) in ((:rand, :rand!), (:randn, :randn!), (:randexp, :randexp!))
     @eval begin
-        Random.$randfun(ctx::GenContext{T}) where T = _draw_scalar(Random.$randfun!, ctx.rng, T)
+        Random.$randfun(ctx::GenContext{T}) where T =
+            _within_unit(() -> _draw_scalar(Random.$randfun!, ctx.rng, T), ctx.cunit)
         Random.$randfun(ctx::GenContext{T}, dims::Dims) where T = Random.$randfun!(ctx, allocate_array(ctx, dims))
         Random.$randfun(ctx::GenContext, dim1::Integer, dims::Integer...) = Random.$randfun(ctx, (dim1, dims...))
-        Random.$randfun!(ctx::GenContext, A::AbstractArray) = _fill_random!(Random.$randfun!, ctx.rng, A)
+        Random.$randfun!(ctx::GenContext, A::AbstractArray) =
+            _within_unit(() -> _fill_random!(Random.$randfun!, ctx.rng, A), ctx.cunit)
     end
 end
 
