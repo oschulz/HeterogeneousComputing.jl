@@ -165,9 +165,13 @@ struct NoCUnitMergeRule end
 
 Get the compute unit backing object `x`.
 
-Recurses through the fields of `x` and merges the compute units of the
-leaves via [`merge_compute_units`](@ref). The compute units of GPU arrays and
-random number generators are based on `MLDataDevices.get_device`.
+Unless there is a specific rule for objects of type `typeof(x)` (see
+[`HeterogeneousComputing.get_compute_unit_impl`](@ref)), `get_compute_unit`
+recurses through the fields of `x` and merges their compute units via
+[`merge_compute_units`](@ref). Reference loops are handled.
+
+The compute units of GPU arrays and random number generators are based on
+`MLDataDevices.get_device`.
 
 Don't specialize `get_compute_unit`, specialize
 [`HeterogeneousComputing.get_compute_unit_impl`](@ref) instead.
@@ -175,65 +179,88 @@ Don't specialize `get_compute_unit`, specialize
 function get_compute_unit end
 export get_compute_unit
 
-get_compute_unit(x) = get_compute_unit_impl(Union{}, x)
-get_compute_unit(cunit::AbstractComputeUnit) = cunit
+get_compute_unit(x) = _get_cunit(x, nothing)
 
 
 """
-    HeterogeneousComputing.get_compute_unit_impl(::Type{TypeHistory}, x)
+    HeterogeneousComputing.get_compute_unit_impl(x)
+
+Specialize `get_compute_unit_impl(x::SomeType)` to directly return the
+compute unit of objects of type `SomeType`, instead of recursing through
+their fields.
 
 See [`get_compute_unit`](@ref).
-
-Specializations that directly resolve the compute unit based on `x` can
-ignore `TypeHistory`:
-
-```julia
-HeterogeneousComputing.get_compute_unit_impl(@nospecialize(TypeHistory::Type), x::SomeType) = ...
-```
 """
 function get_compute_unit_impl end
 
+struct _RecurseFields end
 
-# Guard against object reference loops:
-@inline get_compute_unit_impl(::Type{TypeHistory}, x::T) where {TypeHistory,T<:TypeHistory} = begin
-    UnknownComputeUnitOf(x)
-end
+get_compute_unit_impl(@nospecialize(x)) = _RecurseFields()
+get_compute_unit_impl(cunit::AbstractComputeUnit) = cunit
+get_compute_unit_impl(@nospecialize(T::Type)) = ComputeUnitIndependent()
 
-@generated function get_compute_unit_impl(::Type{TypeHistory}, x) where TypeHistory
-    if isbitstype(x)
-        :(ComputeUnitIndependent())
-    else
-        NewTypeHistory = Union{TypeHistory,x}
-        impl = :(
-            begin
-                dev_0 = ComputeUnitIndependent()
-            end
-        )
-        append!(
-            impl.args,
-            [
-                :(
-                    $(Symbol(:dev_, i)) = merge_compute_units(
-                        get_compute_unit_impl($NewTypeHistory, getfield(x, $i)),
-                        $(Symbol(:dev_, i - 1))
-                    )
-                ) for i in 1:fieldcount(x)
-            ]
-        )
-        push!(impl.args, :(return $(Symbol(:dev_, fieldcount(x)))))
-        impl
+
+# `visited` is `nothing` or an `IdSet` of visited objects that may be part of
+# reference loops:
+@inline _get_cunit(x, visited) = _get_cunit_via(get_compute_unit_impl(x), x, visited)
+
+@inline _get_cunit_via(cunit, @nospecialize(x), @nospecialize(visited)) = cunit
+@inline _get_cunit_via(::_RecurseFields, x, visited) = _get_fields_cunit(x, visited)
+
+@generated function _get_fields_cunit(x, visited)
+    isbitstype(x) && return :(ComputeUnitIndependent())
+    may_loop = _may_close_ref_loop(x)
+    field_cunit(i) = :(_get_cunit(getfield(x, $i), visited))
+    field_cunit_maybe_undef(i) = :(isdefined(x, $i) ? $(field_cunit(i)) : ComputeUnitIndependent())
+    body = Expr(:block)
+    if may_loop
+        push!(body.args, :(visited = _visit!(visited, x)))
+        push!(body.args, :(visited isa _AlreadyVisited && return ComputeUnitIndependent()))
     end
+    push!(body.args, :(cunit_0 = ComputeUnitIndependent()))
+    for i in 1:fieldcount(x)
+        fcunit = ismutabletype(x) && !isbitstype(fieldtype(x, i)) ? field_cunit_maybe_undef(i) : field_cunit(i)
+        push!(body.args, :($(Symbol(:cunit_, i)) = merge_compute_units($fcunit, $(Symbol(:cunit_, i - 1)))))
+    end
+    push!(body.args, :(return $(Symbol(:cunit_, fieldcount(x)))))
+    return body
 end
 
-@inline get_compute_unit_impl(@nospecialize(TypeHistory::Type), A::GPUArraysCore.AbstractGPUArray) =
-    _cunit_from_device(get_device(A), A)
+# Whether objects of type T may be part of a reference loop. Loops need a
+# mutable object that can reach itself: either via fields of non-concrete
+# type or via concretely typed fields only.
+function _may_close_ref_loop(@nospecialize(T::Type))
+    ismutabletype(T) || return false
+    seen = Set{Any}()
+    pending = Any[fieldtypes(T)...]
+    while !isempty(pending)
+        FT = pop!(pending)
+        isbitstype(FT) && continue
+        (!isconcretetype(FT) || FT === T) && return true
+        FT in seen && continue
+        push!(seen, FT)
+        append!(pending, fieldtypes(FT))
+    end
+    return false
+end
 
-@inline get_compute_unit_impl(@nospecialize(TypeHistory::Type), rng::AbstractRNG) =
-    _cunit_from_device(get_device(rng), rng)
+struct _AlreadyVisited end
 
-_cunit_from_device(dev::AbstractDevice, @nospecialize(x)) = DeviceUnit(dev)
-_cunit_from_device(::UnknownDevice, x) = UnknownComputeUnitOf(x)
-_cunit_from_device(::Nothing, @nospecialize(x)) = ComputeUnitIndependent()
+_visit!(::Nothing, x) = _visit!(IdSet{Any}(), x)
+_visit!(visited::IdSet{Any}, x) = x in visited ? _AlreadyVisited() : push!(visited, x)
+
+
+@inline get_compute_unit_impl(A::GPUArraysCore.AbstractGPUArray) = _gpu_array_cunit(get_device(A), A)
+
+_gpu_array_cunit(dev::AbstractDevice, @nospecialize(A)) = DeviceUnit(dev)
+# MLDataDevices considers arrays of unknown type to be CPU arrays:
+_gpu_array_cunit(::Union{CPUDevice,UnknownDevice,Nothing}, A) = UnknownComputeUnitOf(A)
+
+# RNGs without a known device may still hold device state:
+@inline get_compute_unit_impl(rng::AbstractRNG) = _rng_cunit(get_device(rng))
+
+_rng_cunit(dev::AbstractDevice) = DeviceUnit(dev)
+_rng_cunit(::Union{UnknownDevice,Nothing}) = _RecurseFields()
 
 
 
@@ -307,7 +334,10 @@ is_host_unit(::CPUnit) = true
 get_total_memory(::CPUnit) = Sys.total_memory()
 get_free_memory(::CPUnit) = Sys.free_memory()
 
-@inline get_compute_unit_impl(@nospecialize(TypeHistory::Type), ::Array) = CPUnit()
+@inline get_compute_unit_impl(::Array) = CPUnit()
+@static if isdefined(Core, :Memory)
+    @inline get_compute_unit_impl(::Memory) = CPUnit()
+end
 
 
 
