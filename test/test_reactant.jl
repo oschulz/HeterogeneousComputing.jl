@@ -11,6 +11,7 @@ using Test
 using Reactant
 using MLDataDevices: ReactantDevice, get_device
 using Random
+using KernelAbstractions
 
 Reactant.set_default_backend(get(ENV, "HETEROGENEOUSCOMPUTING_REACTANT_BACKEND", "cpu"))
 
@@ -25,6 +26,8 @@ Reactant.set_default_backend(get(ENV, "HETEROGENEOUSCOMPUTING_REACTANT_BACKEND",
     A = allocate_array(cunit, Float32, 2, 3)
     @test A isa Reactant.ConcreteRArray{Float32,2} && size(A) == (2, 3)
     @test Array(fill_array(cunit, 1.5, 2)) == [1.5, 1.5]
+
+    @test KernelAbstractions.Backend(cunit) isa KernelAbstractions.Backend
 
     ctx = GenContext{Float32}(cunit)
     @test get_compute_unit(get_rng(ctx)) == cunit

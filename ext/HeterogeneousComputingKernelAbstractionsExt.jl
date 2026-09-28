@@ -12,6 +12,7 @@ import HeterogeneousComputing: ka_backend
 _KA_Backend(cunit::AbstractComputeUnit) = ka_backend(cunit)::_KA_Backend
 Base.convert(::Type{_KA_Backend}, cunit::AbstractComputeUnit) = ka_backend(cunit)::_KA_Backend
 
+ka_backend(cunit::DeviceUnit) = KernelAbstractions.get_backend(allocate_array(cunit, UInt8, 0))
 ka_backend(::CPUnit) = KernelAbstractions.CPU()
 KernelAbstractions.CPU(cunit::CPUnit) = ka_backend(cunit)
 Base.convert(::Type{KernelAbstractions.CPU}, cunit::CPUnit) = ka_backend(cunit)
