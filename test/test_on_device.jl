@@ -15,4 +15,5 @@ using MLDataDevices: CPUDevice
 
     x, y = rand(Float32, 10), rand(Float32, 10)
     @test @inferred(g(x, y)) ≈ f(x, y)
+    @test_throws ArgumentError g(x)
 end
