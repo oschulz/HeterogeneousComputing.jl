@@ -121,10 +121,17 @@ function Adapt.adapt_structure(to, ctx::GenContext{T}) where T
     target = _adapt_target(to)
     cunit = _adapted_cunit(target, ctx.cunit)
     cunit == ctx.cunit && return ctx
-    rng = adapt(target, ctx.rng)
-    _rng_usable_on(get_compute_unit(rng), cunit) ||
-        throw(ArgumentError("Can't adapt random number generator of type $(typeof(ctx.rng)) to compute unit $cunit"))
-    return GenContext{T}(cunit, rng)
+    return GenContext{T}(cunit, _adapted_rng(target, cunit, ctx.rng))
+end
+
+# Contexts with the default RNG get the default RNG of the target:
+_adapted_rng(@nospecialize(target), cunit::AbstractComputeUnit, ::Random.TaskLocalRNG) = default_device_rng(cunit)
+
+function _adapted_rng(target, cunit::AbstractComputeUnit, rng::AbstractRNG)
+    adapted_rng = adapt(target, rng)
+    _rng_usable_on(get_compute_unit(adapted_rng), cunit) ||
+        throw(ArgumentError("Can't adapt random number generator of type $(typeof(rng)) to compute unit $cunit"))
+    return adapted_rng
 end
 
 # Host RNGs can be used with any compute unit, device RNGs only with their own:
