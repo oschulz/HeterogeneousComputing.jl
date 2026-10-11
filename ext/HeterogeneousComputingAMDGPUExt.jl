@@ -4,8 +4,8 @@ module HeterogeneousComputingAMDGPUExt
 
 import AMDGPU
 
-using HeterogeneousComputing: DeviceUnit
-import HeterogeneousComputing: _canonical_device, _within_unit
+using HeterogeneousComputing: DeviceUnit, UnknownComputeUnitOf
+import HeterogeneousComputing: get_compute_unit_impl, _canonical_device, _within_unit
 
 using MLDataDevices: AMDGPUDevice
 
@@ -23,5 +23,9 @@ function _within_unit(f, cunit::AMDGPUUnit)
         AMDGPU.device!(old_dev)
     end
 end
+
+# rocRAND RNGs don't record which device they belong to (MLDataDevices assumes
+# the currently active device):
+get_compute_unit_impl(rng::AMDGPU.rocRAND.RNG) = UnknownComputeUnitOf(rng)
 
 end # module HeterogeneousComputingAMDGPUExt

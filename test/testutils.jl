@@ -38,6 +38,11 @@ struct _TestDeviceRNG{S} <: AbstractRNG
 end
 
 
+# RNG on an unknown compute unit:
+struct _UnknownUnitRNG <: AbstractRNG end
+HeterogeneousComputing.get_compute_unit_impl(rng::_UnknownUnitRNG) = HeterogeneousComputing.UnknownComputeUnitOf(rng)
+
+
 _on_host(A) = Array(A)
 _on_host(x::Number) = x
 

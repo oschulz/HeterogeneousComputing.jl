@@ -52,10 +52,13 @@ export GenContext
 @inline GenContext(args...) = GenContext{Float64}(args...)
 GenContext{T}() where T = GenContext{T}(CPUnit())
 GenContext{T}(cunit::AbstractComputeUnit) where T = GenContext{T}(cunit, default_device_rng(cunit))
-GenContext{T}(rng::AbstractRNG) where T = GenContext{T}(_rng_cunit(get_compute_unit(rng)), rng)
+GenContext{T}(rng::AbstractRNG) where T = GenContext{T}(_rng_gen_cunit(get_compute_unit(rng)), rng)
 
-_rng_cunit(cunit::AbstractComputeUnit) = cunit
-_rng_cunit(::Any) = CPUnit()
+_rng_gen_cunit(cunit::AbstractComputeUnit) = cunit
+_rng_gen_cunit(::ComputeUnitIndependent) = CPUnit()
+function _rng_gen_cunit(cunit::UnknownComputeUnitOf)
+    return throw(ArgumentError("Compute unit of $(typeof(cunit.x)) is unknown, specify it explicitly"))
+end
 
 GenContext{T}(dev::AbstractDevice) where T = GenContext{T}(DeviceUnit(dev))
 GenContext{T}(dev::AbstractDevice, rng::AbstractRNG) where T = GenContext{T}(DeviceUnit(dev), rng)
@@ -117,6 +120,7 @@ get_rng(ctx::GenContext) = ctx.rng
 function Adapt.adapt_structure(to, ctx::GenContext{T}) where T
     target = _adapt_target(to)
     cunit = _adapted_cunit(target, ctx.cunit)
+    cunit == ctx.cunit && return ctx
     rng = adapt(target, ctx.rng)
     _rng_usable_on(get_compute_unit(rng), cunit) ||
         throw(ArgumentError("Can't adapt random number generator of type $(typeof(ctx.rng)) to compute unit $cunit"))

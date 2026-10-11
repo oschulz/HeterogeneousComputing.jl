@@ -48,6 +48,8 @@ using Adapt: adapt
     mixed_data = (rand(3), JLArray(rand(3)))
     @test get_gencontext(mixed_data) === HeterogeneousComputing.NoGenContext{typeof(mixed_data)}()
     @test_throws ArgumentError GenContext(MixedComputeSystem())
+    @test_throws ArgumentError GenContext(_UnknownUnitRNG())
+    @test adapt(CPUnit(), ctx) === ctx
 
     # Draws use the RNG of the context:
     @test rand(GenContext(Xoshiro(1)), 3) == rand(Xoshiro(1), 3)
