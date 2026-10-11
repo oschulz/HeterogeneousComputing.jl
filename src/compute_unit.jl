@@ -204,7 +204,7 @@ get_compute_unit_impl(cunit::AbstractComputeUnit) = cunit
 get_compute_unit_impl(@nospecialize(T::Type)) = ComputeUnitIndependent()
 
 
-# `visited` is `nothing` or an `IdSet` of visited objects that may be part of
+# `visited` is `nothing` or a `Base.IdSet` of visited objects that may be part of
 # reference loops:
 @inline _get_cunit(x, visited) = _get_cunit_via(get_compute_unit_impl(x), x, visited)
 
@@ -287,8 +287,8 @@ end
 
 struct _AlreadyVisited end
 
-_visit!(::Nothing, x) = _visit!(IdSet{Any}(), x)
-_visit!(visited::IdSet{Any}, x) = x in visited ? _AlreadyVisited() : push!(visited, x)
+_visit!(::Nothing, x) = _visit!(Base.IdSet{Any}(), x)
+_visit!(visited::Base.IdSet{Any}, x) = x in visited ? _AlreadyVisited() : push!(visited, x)
 
 
 @inline get_compute_unit_impl(A::GPUArraysCore.AbstractGPUArray) = _gpu_array_cunit(get_device(A), A)
