@@ -270,7 +270,7 @@ Base.convert(::Type{AbstractComputeUnit}, dev::AbstractDevice) = DeviceUnit(dev)
 MLDataDevices.get_device(cunit::DeviceUnit) = cunit.device
 MLDataDevices.default_device_rng(cunit::DeviceUnit) = _within_unit(() -> default_device_rng(cunit.device), cunit)
 
-Adapt.adapt_storage(cunit::DeviceUnit, x) = Adapt.adapt_storage(cunit.device, x)
+Adapt.adapt_storage(cunit::DeviceUnit, x) = _within_unit(() -> Adapt.adapt_storage(cunit.device, x), cunit)
 
 # Devices may contain handles that are equal but not identical, so units are
 # compared via device equality and hashed by device kind:
