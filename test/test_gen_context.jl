@@ -80,7 +80,13 @@ using Adapt: adapt
         @test all(x -> 0 <= x < Inf, Array(A)[1:2:5])
 
         @test adapt(jl_unit, GenContext{Float32}()) isa GenContext{Float32,typeof(jl_unit),<:GPUArrays.RNG}
+        @test get_compute_unit(adapt(CPUnit(), GenContext{Float32}(jl_unit, Xoshiro(1)))) === CPUnit()
         @test get_compute_unit(adapt(CPUnit(), jl_ctx)) === CPUnit()
+        # RNGs with state on other compute units can't be used:
+        @test_throws ArgumentError adapt(
+            CPUnit(),
+            GenContext{Float32}(jl_unit, _TestDeviceRNG(JLArray(rand(UInt64, 4))))
+        )
     end
 
     @testset "exponential from uniform variates" begin

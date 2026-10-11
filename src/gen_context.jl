@@ -116,8 +116,19 @@ get_rng(ctx::GenContext) = ctx.rng
 # Adapting a context to a compute unit or device moves it to that unit:
 function Adapt.adapt_structure(to, ctx::GenContext{T}) where T
     target = _adapt_target(to)
-    return GenContext{T}(_adapted_cunit(target, ctx.cunit), adapt(target, ctx.rng))
+    cunit = _adapted_cunit(target, ctx.cunit)
+    rng = adapt(target, ctx.rng)
+    _rng_usable_on(get_compute_unit(rng), cunit) ||
+        throw(ArgumentError("Can't adapt random number generator of type $(typeof(ctx.rng)) to compute unit $cunit"))
+    return GenContext{T}(cunit, rng)
 end
+
+# Host RNGs can be used with any compute unit, device RNGs only with their own:
+function _rng_usable_on(rng_cunit::AbstractComputeUnit, cunit::AbstractComputeUnit)
+    return is_host_unit(rng_cunit) || rng_cunit == cunit
+end
+_rng_usable_on(::ComputeUnitIndependent, ::AbstractComputeUnit) = true
+_rng_usable_on(::Any, ::AbstractComputeUnit) = false
 
 _adapt_target(dev::AbstractDevice) = DeviceUnit(dev)
 _adapt_target(@nospecialize(to)) = to

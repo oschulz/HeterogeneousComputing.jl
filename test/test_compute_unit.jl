@@ -12,10 +12,6 @@ using Random
 
 
 
-struct _TestDeviceRNG{S} <: AbstractRNG
-    state::S
-end
-
 mutable struct _TestNode
     data::Vector{Float64}
     next::_TestNode

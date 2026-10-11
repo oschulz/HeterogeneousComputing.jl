@@ -3,7 +3,7 @@
 import ArraysOfArrays, FillArrays, StructArrays
 using Test
 using HeterogeneousComputing
-using Random: rand!, randn!, randexp!
+using Random: AbstractRNG, rand!, randn!, randexp!
 using Adapt: adapt
 using MLDataDevices: default_device_rng
 
@@ -29,6 +29,12 @@ function gen_testclosure()
     return function _testclosure(args...)
         return merge(data, (args = args,))
     end
+end
+
+
+# RNG with state on a compute unit:
+struct _TestDeviceRNG{S} <: AbstractRNG
+    state::S
 end
 
 

@@ -12,6 +12,7 @@ using KernelAbstractions
 using MLDataDevices: CUDADevice, get_device, default_device_rng
 using StructArrays
 using Random
+using Adapt: adapt
 
 include(joinpath(@__DIR__, "..", "testutils.jl"))
 
@@ -41,6 +42,8 @@ CUDA.allowscalar(false)
     library_rng() = isdefined(CUDA, :cuRAND) ? CUDA.cuRAND.LibraryRNG() : CUDA.CURAND.RNG()
     @test GenContext{Float32}(library_rng()).cunit === cunit
     test_gencontext_draws(GenContext{Float32}(library_rng()))
+    @test_throws ArgumentError adapt(CPUnit(), GenContext{Float32}(library_rng()))
+    @test get_compute_unit(adapt(CPUnit(), GenContext{Float32}(cunit))) === CPUnit()
 
     test_gencontext_draws(ctx)
     test_gencontext_draws(GenContext{Float64}(cunit))
