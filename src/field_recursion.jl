@@ -14,7 +14,7 @@
 const _max_inline_depth = 8
 
 function _fields_cunit_expr(@nospecialize(T::Type), xex, vex, depth::Int)
-    isbitstype(T) && return :(ComputeUnitIndependent())
+    _isbits_without_cunit_rules(T) && return :(ComputeUnitIndependent())
     # Types that may close reference loops need to be tracked:
     depth > 0 && _may_close_ref_loop(T) && return :(_get_fields_cunit($xex, $vex))
     body = Expr(:block)
@@ -52,6 +52,21 @@ end
 function _has_cunit_rule(@nospecialize(T::Type))
     return T <: Union{Type,Array,AbstractComputeUnit,GPUArraysCore.AbstractGPUArray,AbstractRNG,GenContext} ||
            (isdefined(Core, :Memory) && T <: Core.Memory)
+end
+
+# Isbits types can contain compute units and contexts, which have rules:
+function _isbits_without_cunit_rules(@nospecialize(T::Type))
+    isbitstype(T) || return false
+    seen = Set{Any}()
+    pending = Any[T]
+    while !isempty(pending)
+        FT = pop!(pending)
+        FT in seen && continue
+        push!(seen, FT)
+        _has_cunit_rule(FT) && return false
+        append!(pending, fieldtypes(FT))
+    end
+    return true
 end
 
 # Whether objects of type T may be part of a reference loop. Loops need a

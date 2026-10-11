@@ -92,6 +92,10 @@ end
 
         # Compute units and contexts:
         @test @inferred(get_compute_unit((x = rand(Float32, 3), ctx = GenContext()))) === CPUnit()
+        @test @inferred(get_compute_unit((GenContext{Float32}(),))) === CPUnit()  # isbits container
+        @test @inferred(get_compute_unit((4.2, CPUnit()))) === CPUnit()
+        @test get_compute_unit((GenContext(Xoshiro(1)), GenContext(AbstractComputeUnit(JLBackend()), Xoshiro(2)))) ===
+              MixedComputeSystem()
         jl_ctx = GenContext(AbstractComputeUnit(JLBackend()))
         @test get_compute_unit((x = 4.2, ctx = jl_ctx)) === AbstractComputeUnit(JLBackend())
         @test get_compute_unit(Dict(:a => 1)) === CPUnit()

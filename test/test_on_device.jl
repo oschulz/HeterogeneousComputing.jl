@@ -26,4 +26,8 @@ using JLArrays: JLArray, JLBackend
     # Results are adapted back to the compute unit of the arguments:
     jl_f = on_device((x, y) -> x .* y, AbstractComputeUnit(JLBackend()), dummy_x, dummy_y)
     @test jl_f(x, y) isa Vector{Float32} && jl_f(x, y) ≈ x .* y
+    # Contexts are arguments on their compute unit as well:
+    ctx = GenContext{Float32}()
+    jl_rand = on_device(c -> rand(c, 3), AbstractComputeUnit(JLBackend()), ctx)
+    @test jl_rand(ctx) isa Vector{Float32}
 end
