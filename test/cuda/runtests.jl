@@ -38,8 +38,9 @@ CUDA.allowscalar(false)
     @test GenContext{Float32}(get_rng(ctx)) === ctx
     @test GenContext{Float32}(CUDADevice()) isa typeof(ctx)
     # cuRAND library RNGs are bound to a CUDA context:
-    @test GenContext{Float32}(CUDA.cuRAND.LibraryRNG()).cunit === cunit
-    test_gencontext_draws(GenContext{Float32}(CUDA.cuRAND.LibraryRNG()))
+    library_rng() = isdefined(CUDA, :cuRAND) ? CUDA.cuRAND.LibraryRNG() : CUDA.CURAND.RNG()
+    @test GenContext{Float32}(library_rng()).cunit === cunit
+    test_gencontext_draws(GenContext{Float32}(library_rng()))
 
     test_gencontext_draws(ctx)
     test_gencontext_draws(GenContext{Float64}(cunit))
