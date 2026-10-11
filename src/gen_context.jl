@@ -140,7 +140,7 @@ _fill_random!(f!::F, rng::AbstractRNG, A::AbstractArray) where {F} = _fill_rando
 
 _fill_random_array!(f!::F, rng::AbstractRNG, A::AbstractArray) where {F} = f!(rng, A)
 # GPU RNGs provide no exponential variates:
-function _fill_random_array!(::typeof(Random.randexp!), rng::AbstractRNG, A::GPUArraysCore.AbstractGPUArray)
+function _fill_random_array!(::typeof(Random.randexp!), rng::AbstractRNG, A::GPUArraysCore.AnyGPUArray)
     return _randexp_from_rand!(rng, A)
 end
 
@@ -175,7 +175,7 @@ numerical element type specified by `ctx`.
 The default element type can be overriden by specifying `T`.
 """
 @inline allocate_array(ctx::GenContext{T}, dims::Dims) where T = allocate_array(ctx.cunit, T, dims)
-@inline allocate_array(ctx::GenContext, dim1::Integer, dims::Integer...) = allocate_array(ctx, (dim1, dims...))
+@inline allocate_array(ctx::GenContext, dims::Integer...) = allocate_array(ctx, dims)
 @inline allocate_array(ctx::GenContext, ::Type{T}, args...) where T = allocate_array(ctx.cunit, T, args...)
 @inline allocate_array(ctx::GenContext, ::Type{T}, dims::Integer...) where T = allocate_array(ctx, T, dims)
 

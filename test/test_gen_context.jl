@@ -59,6 +59,7 @@ using Adapt: adapt
     _check_array(@inferred(allocate_array(ctx, 4, 5)), Float32, (4, 5))
     _check_array(@inferred(allocate_array(ctx, Float16, (4, 5))), Float16, (4, 5))
     _check_array(@inferred(allocate_array(ctx, Float16, 4, 5)), Float16, (4, 5))
+    _check_array(@inferred(allocate_array(ctx)), Float32, ())
     @test @inferred(fill_array(ctx, 1.5, 2, 3)) == fill(1.5f0, 2, 3)
     @test @inferred(fill_array(ctx, true, 2)) == fill(true, 2)
 
@@ -72,6 +73,11 @@ using Adapt: adapt
         @test GenContext{Float32}(get_rng(jl_ctx)) === jl_ctx
         @test get_gencontext(allocate_array(jl_ctx, 3)) isa GenContext{Float32,typeof(jl_unit)}
         test_gencontext_draws(jl_ctx)
+
+        # Exponential variates on wrapped GPU arrays:
+        A = allocate_array(jl_ctx, 6)
+        @test randexp!(jl_ctx, view(A, 1:2:5)) isa SubArray
+        @test all(x -> 0 <= x < Inf, Array(A)[1:2:5])
 
         @test adapt(jl_unit, GenContext{Float32}()) isa GenContext{Float32,typeof(jl_unit),<:GPUArrays.RNG}
         @test get_compute_unit(adapt(CPUnit(), jl_ctx)) === CPUnit()
