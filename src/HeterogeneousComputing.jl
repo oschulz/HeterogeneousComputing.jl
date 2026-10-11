@@ -22,5 +22,6 @@ include("compute_unit.jl")
 include("gen_context.jl")
 include("numtype.jl")
 include("on_device.jl")
+include("field_recursion.jl")
 
 end # module

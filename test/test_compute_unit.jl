@@ -101,6 +101,15 @@ end
         @test get_compute_unit(Dict(:a => 1)) === CPUnit()
     end
 
+    @testset "get_compute_unit with package evaluated from source" begin
+        # Generated functions only see code defined before them, which loading
+        # precompiled packages hides:
+        m = Module()
+        Base.include(m, pathof(HeterogeneousComputing))
+        src_HC = m.HeterogeneousComputing
+        @test src_HC.get_compute_unit((rand(3), (a = view(rand(4), 1:2),))) === src_HC.CPUnit()
+    end
+
     @testset "get_compute_unit with reference loops" begin
         # Self-referencing closure, captured via a Core.Box:
         local f
