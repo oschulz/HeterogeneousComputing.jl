@@ -6,7 +6,7 @@ using HeterogeneousComputing
 using HeterogeneousComputing: _OnDevice
 import HeterogeneousComputing: get_compute_unit_impl, get_precision_fromtype, allocate_array, compute_unit_mergerule
 import HeterogeneousComputing:
-    _canonical_device, _same_device, _fill_random!, _draw_scalar, _scalar_randfun, _RecurseFields
+    _canonical_device, _same_device, _fill_random!, _draw_scalar, _scalar_randfun, _RecurseFields, _gen_convert
 
 import Reactant
 using Reactant: ConcreteRArray, TracedRArray, TracedRNumber, ReactantRNG, within_compile
@@ -14,6 +14,7 @@ using Reactant.Compiler: compile
 
 using Adapt: adapt
 using MLDataDevices: MLDataDevices, ReactantDevice, get_device, default_device_rng
+import Random
 
 
 const ReactantUnit = DeviceUnit{<:ReactantDevice}
@@ -49,7 +50,8 @@ end
 # A new RNG created within compiled code would have a fixed seed:
 function MLDataDevices.default_device_rng(cunit::ReactantUnit)
     within_compile() && throw(ArgumentError("Random number generators for Reactant must be passed into compiled code"))
-    return default_device_rng(get_device(cunit))
+    # MLDataDevices.default_device_rng(::ReactantDevice) ignores client and device:
+    return adapt(get_device(cunit), Random.RandomDevice())
 end
 
 const _ConcreteRNG = ReactantRNG{<:Reactant.AbstractConcreteArray}
@@ -68,6 +70,8 @@ function _draw_scalar(f!::F, rng::ReactantRNG{<:TracedRArray}, ::Type{T}, ::Abst
 end
 
 get_precision_fromtype(::Type{<:Reactant.RNumber{T}}) where T = get_precision_fromtype(T)
+
+_gen_convert(::Type{T}, x::TracedRNumber{<:AbstractFloat}) where T = convert(TracedRNumber{T}, x)
 
 function allocate_array(cunit::ReactantUnit, ::Type{T}, dims::Dims) where T
     U = Reactant.unwrapped_eltype(T)

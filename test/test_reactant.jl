@@ -39,7 +39,7 @@ Reactant.set_default_backend(get(ENV, "HETEROGENEOUSCOMPUTING_REACTANT_BACKEND",
 
     function f(ctx, x)
         return (
-            randn(ctx, 3), randexp!(ctx, similar(x)), fill_array(ctx, sum(x), 2), rand(ctx),
+            randn(ctx, 3), randexp!(ctx, similar(x)), fill_array(ctx, sum(x) * 2.0, 2), rand(ctx),
             merge_compute_units(get_compute_unit(x), get_compute_unit(ctx)) == get_compute_unit(ctx),
             get_precision(sum(x))
         )
@@ -49,7 +49,8 @@ Reactant.set_default_backend(get(ENV, "HETEROGENEOUSCOMPUTING_REACTANT_BACKEND",
     r2 = f_compiled(ctx, x)
     @test r1[1] isa Reactant.ConcreteRArray{Float32,1} && size(r1[1]) == (3,)
     @test all(>=(0), Array(r1[2]))
-    @test Array(r1[3]) ≈ fill(sum(Array(x)), 2)
+    # Floating point fills use the context precision:
+    @test r1[3] isa Reactant.ConcreteRArray{Float32,1} && Array(r1[3]) ≈ fill(2 * sum(Array(x)), 2)
     @test r1[5] == true
     @test 0 <= Float32(r1[4]) <= 1
     @test Float32(r1[4]) != Float32(r2[4])
