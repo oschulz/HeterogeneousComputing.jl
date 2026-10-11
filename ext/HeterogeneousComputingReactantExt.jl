@@ -73,6 +73,11 @@ function MLDataDevices.default_device_rng(cunit::ReactantUnit)
 end
 
 # MLDataDevices doesn't move ReactantRNGs between devices:
+function Adapt.adapt_storage(cunit::ReactantUnit, x::AbstractArray)
+    dev = within_compile() ? get_device(cunit) : _single_device(get_device(cunit))
+    return Adapt.adapt_storage(dev, x)
+end
+
 function Adapt.adapt_storage(cunit::ReactantUnit, rng::ReactantRNG)
     return get_compute_unit(rng) == cunit ? rng : ReactantRNG(adapt(get_device(cunit), rng.seed), rng.algorithm)
 end
