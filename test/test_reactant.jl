@@ -8,8 +8,13 @@
 using HeterogeneousComputing
 using Test
 
+# Two CPU devices for multi-device tests (only effective before Reactant
+# initializes its CPU client):
+ENV["XLA_FLAGS"] = get(ENV, "XLA_FLAGS", "") * " --xla_force_host_platform_device_count=2"
+
 using Reactant
-using MLDataDevices: ReactantDevice, get_device
+using MLDataDevices: ReactantDevice, reactant_device, get_device
+using Adapt: adapt
 using Random
 using KernelAbstractions
 
@@ -19,12 +24,7 @@ Reactant.set_default_backend(get(ENV, "HETEROGENEOUSCOMPUTING_REACTANT_BACKEND",
     x = Reactant.to_rarray(rand(Float32, 5))
     cunit = get_compute_unit(x)
     @test cunit isa DeviceUnit{<:ReactantDevice}
-    # Units derived within compiled code don't specify the device, but merge
-    # with units that do:
-    partial = DeviceUnit(ReactantDevice())
-    @test partial != cunit
-    @test merge_compute_units(cunit, partial) === cunit
-    @test merge_compute_units(partial, cunit) === cunit
+    @test DeviceUnit(ReactantDevice()) == cunit
     @test get_compute_unit(Reactant.to_rarray(2.0f0; track_numbers = Number)) == cunit
     @test get_precision(Reactant.to_rarray(2.0f0; track_numbers = Number)) === Float32
 
@@ -37,10 +37,17 @@ Reactant.set_default_backend(get(ENV, "HETEROGENEOUSCOMPUTING_REACTANT_BACKEND",
     ctx = GenContext{Float32}(cunit)
     @test get_compute_unit(get_rng(ctx)) == cunit
 
+    # Units derived within compiled code don't specify the device, but merge
+    # with units that do:
+    function _partial_unit_merges(partial, concrete)
+        return partial != concrete && merge_compute_units(partial, concrete) === concrete &&
+               merge_compute_units(concrete, partial) === concrete
+    end
+
     function f(ctx, x)
         return (
             randn(ctx, 3), randexp!(ctx, similar(x)), fill_array(ctx, sum(x) * 2.0, 2), rand(ctx),
-            merge_compute_units(get_compute_unit(x), get_compute_unit(ctx)) == get_compute_unit(ctx),
+            _partial_unit_merges(get_compute_unit(x), get_compute_unit(ctx)),
             get_precision(sum(x))
         )
     end
@@ -63,6 +70,27 @@ Reactant.set_default_backend(get(ENV, "HETEROGENEOUSCOMPUTING_REACTANT_BACKEND",
     @test_throws ArgumentError @jit((x -> randn(GenContext{Float32}(get_compute_unit(x)), 3))(x))
     @test_throws ArgumentError rand(ctx, 3)
     @test_throws ArgumentError rand(ctx)
+
+    devs = Reactant.devices()
+    if length(devs) >= 2
+        @testset "multiple devices" begin
+            u0 = DeviceUnit(reactant_device(; device = devs[1]))
+            u1 = DeviceUnit(reactant_device(; device = devs[2]))
+            @test u0 != u1
+            @test u0 == get_compute_unit(Reactant.to_rarray(rand(2); device = devs[1]))
+            # Unspecified clients and devices are resolved like Reactant does:
+            @test DeviceUnit(ReactantDevice()) == u0
+            @test DeviceUnit(reactant_device(; client = Reactant.XLA.client(devs[2]))) == u0
+
+            ctx0 = GenContext{Float32}(u0)
+            @test get_compute_unit(get_rng(GenContext{Float32}(u1))) == u1
+            @test adapt(u0, ctx0).rng === get_rng(ctx0)
+            ctx1 = adapt(u1, ctx0)
+            @test get_compute_unit(ctx1) == u1 && get_compute_unit(get_rng(ctx1)) == u1
+            y1 = Reactant.to_rarray(rand(Float32, 3); device = devs[2])
+            @test @jit(((ctx, y) -> y .+ randn(ctx, size(y)))(ctx1, y1)) isa Reactant.ConcreteRArray{Float32,1}
+        end
+    end
 
     g = on_device((x, y) -> sum(x .* y), cunit, rand(Float32, 3), rand(Float32, 3))
     @test g(ones(Float32, 3), ones(Float32, 3)) ≈ 3

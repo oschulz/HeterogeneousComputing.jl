@@ -10,8 +10,10 @@ import HeterogeneousComputing:
 
 import Reactant
 using Reactant: ConcreteRArray, TracedRArray, TracedRNumber, ReactantRNG, within_compile
+using Reactant: XLA
 using Reactant.Compiler: compile
 
+import Adapt
 using Adapt: adapt
 using MLDataDevices: MLDataDevices, ReactantDevice, get_device, default_device_rng
 import Random
@@ -24,10 +26,18 @@ const _ConcreteTypes = Union{
     Reactant.ConcreteIFRTArray,Reactant.ConcreteIFRTNumber
 }
 
-# Units don't track the sharding of individual arrays:
+# Units don't track the sharding of individual arrays. Outside of compiled
+# code, a missing client or device is resolved like Reactant does when moving
+# data, within compiled code the location of values is unknown:
 function _canonical_device(dev::ReactantDevice)
-    return MLDataDevices.with_eltype(ReactantDevice(dev.client, dev.device, missing), nothing)
+    client, device = within_compile() ? (dev.client, dev.device) : _resolve_location(dev.client, dev.device)
+    return MLDataDevices.with_eltype(ReactantDevice(client, device, missing), nothing)
 end
+
+_resolve_location(client, device) = (client, device)
+_resolve_location(::Missing, ::Missing) = _resolve_location(XLA.default_backend(), missing)
+_resolve_location(client, ::Missing) = (client, XLA.default_device(client))
+_resolve_location(::Missing, device) = (XLA.client(device), device)
 
 get_compute_unit_impl(x::_ConcreteTypes) = DeviceUnit(get_device(x))
 # The device of traced values is unknown within compiled code:
@@ -37,8 +47,8 @@ end
 # get_device fails for ReactantRNGs within compiled code, use their fields:
 get_compute_unit_impl(::ReactantRNG) = _RecurseFields()
 
-# Devices derived within compiled code specify neither client nor device, and
-# merge with any device that does:
+# Units derived within compiled code specify neither client nor device, and
+# merge with any unit that does:
 _is_partial(dev::ReactantDevice) = dev.client === missing
 
 _same_device(a::ReactantDevice, b::ReactantDevice) = _is_partial(a) == _is_partial(b) && a == b
@@ -52,6 +62,11 @@ function MLDataDevices.default_device_rng(cunit::ReactantUnit)
     within_compile() && throw(ArgumentError("Random number generators for Reactant must be passed into compiled code"))
     # MLDataDevices.default_device_rng(::ReactantDevice) ignores client and device:
     return adapt(get_device(cunit), Random.RandomDevice())
+end
+
+# MLDataDevices doesn't move ReactantRNGs between devices:
+function Adapt.adapt_storage(cunit::ReactantUnit, rng::ReactantRNG)
+    return get_compute_unit(rng) == cunit ? rng : ReactantRNG(adapt(get_device(cunit), rng.seed), rng.algorithm)
 end
 
 const _ConcreteRNG = ReactantRNG{<:Reactant.AbstractConcreteArray}

@@ -115,11 +115,14 @@ get_rng(ctx::GenContext) = ctx.rng
 
 # Adapting a context to a compute unit or device moves it to that unit:
 function Adapt.adapt_structure(to, ctx::GenContext{T}) where T
-    return GenContext{T}(_adapted_cunit(to, ctx.cunit), adapt(to, ctx.rng))
+    target = _adapt_target(to)
+    return GenContext{T}(_adapted_cunit(target, ctx.cunit), adapt(target, ctx.rng))
 end
 
+_adapt_target(dev::AbstractDevice) = DeviceUnit(dev)
+_adapt_target(@nospecialize(to)) = to
+
 _adapted_cunit(to::AbstractComputeUnit, ::AbstractComputeUnit) = to
-_adapted_cunit(to::AbstractDevice, ::AbstractComputeUnit) = DeviceUnit(to)
 _adapted_cunit(@nospecialize(to), cunit::AbstractComputeUnit) = cunit
 
 
