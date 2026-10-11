@@ -42,9 +42,11 @@ allocate_array(cunit::CUDAUnit, ::Type{T}, dims::Dims) where T = _within_unit(()
 ka_backend(::CUDAUnit) = CUDA.CUDABackend()
 
 
-# MLDataDevices doesn't know the cuRAND RNGs of CUDA v6:
+# MLDataDevices doesn't know the cuRAND RNGs of CUDA v6. Native RNGs aren't
+# tied to a device, library RNGs are bound to a CUDA context:
 @static if isdefined(CUDA, :cuRAND)
-    get_compute_unit_impl(::Union{CUDA.cuRAND.LibraryRNG,CUDA.cuRAND.NativeRNG}) = DeviceUnit(CUDADevice(CUDA.device()))
+    get_compute_unit_impl(::CUDA.cuRAND.NativeRNG) = DeviceUnit(CUDADevice(CUDA.device()))
+    get_compute_unit_impl(rng::CUDA.cuRAND.LibraryRNG) = DeviceUnit(CUDADevice(CUDA.device(rng.ctx)))
 end
 
 end # module HeterogeneousComputingCUDAExt
