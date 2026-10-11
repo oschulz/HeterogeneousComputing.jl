@@ -51,7 +51,15 @@ get_compute_unit_impl(::ReactantRNG) = _RecurseFields()
 # merge with any unit that does:
 _is_partial(dev::ReactantDevice) = dev.client === missing
 
-_same_device(a::ReactantDevice, b::ReactantDevice) = _is_partial(a) == _is_partial(b) && a == b
+# MLDataDevices treats unspecified and sharded (device `nothing`) locations as
+# equal to any location, units need a strict equality:
+function _same_device(a::ReactantDevice, b::ReactantDevice)
+    return _location_id(a.client) === _location_id(b.client) && _location_id(a.device) === _location_id(b.device)
+end
+
+_location_id(x::Union{Missing,Nothing}) = x
+_location_id(client::XLA.AbstractClient) = client.client
+_location_id(device::XLA.AbstractDevice) = device.device
 
 function compute_unit_mergerule(a::ReactantUnit, b::ReactantUnit)
     return _is_partial(a.device) && !_is_partial(b.device) ? b : HeterogeneousComputing.NoCUnitMergeRule()

@@ -82,6 +82,14 @@ Reactant.set_default_backend(get(ENV, "HETEROGENEOUSCOMPUTING_REACTANT_BACKEND",
             @test DeviceUnit(ReactantDevice()) == u0
             @test DeviceUnit(reactant_device(; client = Reactant.XLA.client(devs[2]))) == u0
 
+            # Sharded arrays aren't located on any specific device:
+            mesh = Reactant.Sharding.Mesh(reshape(devs[1:2], 2), (:x,))
+            s = Reactant.to_rarray(rand(4); sharding = Reactant.Sharding.NamedSharding(mesh, (:x,)))
+            a0 = Reactant.to_rarray(rand(2); device = devs[1])
+            a1 = Reactant.to_rarray(rand(2); device = devs[2])
+            @test get_compute_unit(s) != u0 && get_compute_unit(s) != u1
+            @test get_compute_unit((a0, s, a1)) === MixedComputeSystem()
+
             ctx0 = GenContext{Float32}(u0)
             @test get_compute_unit(get_rng(GenContext{Float32}(u1))) == u1
             @test adapt(u0, ctx0).rng === get_rng(ctx0)
