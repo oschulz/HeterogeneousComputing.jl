@@ -69,7 +69,7 @@ end
 function MLDataDevices.default_device_rng(cunit::ReactantUnit)
     within_compile() && throw(ArgumentError("Random number generators for Reactant must be passed into compiled code"))
     # MLDataDevices.default_device_rng(::ReactantDevice) ignores client and device:
-    return adapt(get_device(cunit), Random.RandomDevice())
+    return adapt(_single_device(get_device(cunit)), Random.RandomDevice())
 end
 
 # MLDataDevices doesn't move ReactantRNGs between devices:
@@ -101,11 +101,16 @@ function allocate_array(cunit::ReactantUnit, ::Type{T}, dims::Dims) where T
     if within_compile()
         return similar(TracedRArray{U}, dims)
     else
-        dev = get_device(cunit)
-        client = dev.client === missing ? nothing : dev.client
-        device = dev.device === missing ? nothing : dev.device
-        return ConcreteRArray{U}(undef, dims; client, device)
+        dev = _single_device(get_device(cunit))
+        return ConcreteRArray{U}(undef, dims; client = dev.client, device = dev.device)
     end
+end
+
+# Units of sharded arrays don't keep their sharding, so new arrays and RNGs
+# can't be placed accordingly outside of compiled code:
+function _single_device(dev::ReactantDevice)
+    dev.device === nothing && throw(ArgumentError("Can't place new data on a sharded Reactant compute unit"))
+    return dev
 end
 
 

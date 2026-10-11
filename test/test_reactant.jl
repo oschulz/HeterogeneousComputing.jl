@@ -89,6 +89,8 @@ Reactant.set_default_backend(get(ENV, "HETEROGENEOUSCOMPUTING_REACTANT_BACKEND",
             a1 = Reactant.to_rarray(rand(2); device = devs[2])
             @test get_compute_unit(s) != u0 && get_compute_unit(s) != u1
             @test get_compute_unit((a0, s, a1)) === MixedComputeSystem()
+            @test_throws ArgumentError allocate_array(get_compute_unit(s), Float32, 4)
+            @test_throws ArgumentError GenContext{Float32}(get_compute_unit(s))
 
             ctx0 = GenContext{Float32}(u0)
             @test get_compute_unit(get_rng(GenContext{Float32}(u1))) == u1
