@@ -139,6 +139,17 @@ end
 
 get_precision_fromtype(::Type{<:Reactant.RNumber{T}}) where T = get_precision_fromtype(T)
 
+# MLDataDevices only moves numbers of the types a device tracks, which units
+# don't specify, so Reactant numbers are moved explicitly:
+const _ConcreteNumbers = Union{Reactant.ConcretePJRTNumber,Reactant.ConcreteIFRTNumber}
+
+function Adapt.adapt_storage(cunit::ReactantUnit, x::_ConcreteNumbers)
+    get_compute_unit(x) == cunit && return x
+    dev = get_device(cunit)
+    sharding = coalesce(dev.sharding, Sharding.NoSharding())
+    return Reactant.ConcreteRNumber(Reactant.unwrapped_eltype(x)(x); client = dev.client, device = dev.device, sharding)
+end
+
 _gen_convert(::Type{T}, x::TracedRNumber{<:AbstractFloat}) where T = convert(TracedRNumber{T}, x)
 
 function allocate_array(cunit::ReactantUnit, ::Type{T}, dims::Dims) where T
