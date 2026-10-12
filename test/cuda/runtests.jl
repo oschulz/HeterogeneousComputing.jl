@@ -46,6 +46,12 @@ CUDA.allowscalar(false)
     @test adapt(CPUnit(), GenContext{Float32}(library_rng())) isa GenContext{Float32,CPUnit,Xoshiro}
     @test get_compute_unit(adapt(CPUnit(), GenContext{Float32}(cunit))) === CPUnit()
     derived_cuda() = adapt(cunit, GenContext{Float32}(Xoshiro(1)))
+    # Derived RNGs use more than 32 bits of their seeds:
+    seeded(seed) = GenContext{Float32}(
+        cunit,
+        HeterogeneousComputing._seeded_rng(cunit, (seed, zero(seed), zero(seed), zero(seed)))
+    )
+    @test Array(rand(seeded(UInt64(1)), 4)) != Array(rand(seeded(UInt64(1) << 32), 4))
     @test get_compute_unit(get_rng(derived_cuda())) === cunit
     @test Array(rand(derived_cuda(), 3)) == Array(rand(derived_cuda(), 3))
 

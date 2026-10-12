@@ -42,8 +42,13 @@ allocate_array(cunit::CUDAUnit, ::Type{T}, dims::Dims) where T = _within_unit(()
 
 ka_backend(::CUDAUnit) = CUDA.CUDABackend()
 
-# The default RNG of CUDA v5, an alias for the GPUArrays RNG on CUDA v6:
-_seeded_rng_like(::CUDA.RNG, ::AbstractComputeUnit, seeds::NTuple{4,UInt64}) = CUDA.RNG(seeds[1])
+# The native RNG of CUDA v5 only has 32-bit keys, derived RNGs use the
+# GPUArrays RNG instead (the default RNG on CUDA v6):
+@static if pkgversion(CUDA) < v"6"
+    function _seeded_rng_like(::CUDA.RNG, ::AbstractComputeUnit, seeds::NTuple{4,UInt64})
+        return CUDA.GPUArrays.RNG{CUDA.CuArray}(seeds[1])
+    end
+end
 
 
 # Native cuRAND RNGs aren't tied to a device, library RNGs are bound to a CUDA
