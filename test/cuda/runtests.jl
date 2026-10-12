@@ -58,6 +58,11 @@ CUDA.allowscalar(false)
     test_gencontext_draws(ctx)
     test_gencontext_draws(GenContext{Float64}(cunit))
 
+    # Functions on the unit adapt their arguments and results:
+    scale = on_device((x, y) -> x .* y, cunit, rand(Float32, 3), rand(Float32, 3))
+    xs, ys = rand(Float32, 3), rand(Float32, 3)
+    @test scale(xs, ys) isa Vector{Float32} && scale(xs, ys) ≈ xs .* ys
+
     # GPU uniform variates can be exactly one, exponential variates derived
     # from them must still be finite:
     @test all(isfinite, randexp(ctx, 10^8))

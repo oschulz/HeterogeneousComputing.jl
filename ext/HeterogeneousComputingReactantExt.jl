@@ -164,12 +164,12 @@ function allocate_array(cunit::ReactantUnit, ::Type{T}, dims::Dims) where T
 end
 
 
-function HeterogeneousComputing.on_device(f, device::ReactantDevice, dummy_args::Vararg{Any,N}) where {N}
-    f_device, args_device = adapt(device, (f, dummy_args))
+function HeterogeneousComputing.on_device(f, cunit::ReactantUnit, dummy_args::Vararg{Any,N}) where {N}
+    f_device, args_device = adapt(cunit, (f, dummy_args))
     f_compiled = compile(f_device, args_device)
     # Reactant-compiled functions are probably not thread-safe:
     lock = ReentrantLock()
-    return _OnDevice{N}(f_compiled, device, lock)
+    return _OnDevice{N}(f_compiled, cunit, lock)
 end
 
 end # module HeterogeneousComputingReactantExt

@@ -1,16 +1,16 @@
 # This file is a part of HeterogeneousComputing.jl, licensed under the MIT License (MIT).
 
 """
+    on_device(f, cunit::AbstractComputeUnit, dummy_args...)
     on_device(f, device::MLDataDevices.AbstractDevice, dummy_args...)
-    on_device(f, cunit::DeviceUnit, dummy_args...)
 
-Returns a function that runs `f` on the specified `device` with arguments
-like `dummy_args`.
+Returns a function that runs `f` on the compute unit `cunit` (or the compute
+unit of `device`) with arguments like `dummy_args`.
 
 The resulting function will only accept the same kind and number of arguments
 as `dummy_args`. It will automatically adapt the arguments to the target
-device, and adapt the function result back to the original device of the
-arguments. Depending on the device, `dummy_args` may or may not be used.
+compute unit, and adapt the function result back to the compute unit of the
+arguments. Depending on the compute unit, `dummy_args` may or may not be used.
 Arguments on different compute units are not supported.
 
 Example:
@@ -31,31 +31,31 @@ g(x, y) ≈ f(x, y)
 function on_device end
 export on_device
 
-function on_device(f, device::AbstractDevice, @nospecialize(dummy_args::Vararg{Any,N})) where {N}
-    f_device = adapt(device, f)
+function on_device(f, cunit::AbstractComputeUnit, @nospecialize(dummy_args::Vararg{Any,N})) where {N}
+    f_device = adapt(cunit, f)
     lock = nothing
-    return _OnDevice{N}(f_device, device, lock)
+    return _OnDevice{N}(f_device, cunit, lock)
 end
 
-function on_device(f, cunit::DeviceUnit, @nospecialize(dummy_args::Vararg{Any,N})) where {N}
-    return on_device(f, get_device(cunit), dummy_args...)
+function on_device(f, device::AbstractDevice, @nospecialize(dummy_args::Vararg{Any,N})) where {N}
+    return on_device(f, DeviceUnit(device), dummy_args...)
 end
 
 
-struct _OnDevice{N,F,D,L<:Union{Nothing,ReentrantLock}} <: Function
+struct _OnDevice{N,F,CU<:AbstractComputeUnit,L<:Union{Nothing,ReentrantLock}} <: Function
     f_device::F
-    device::D
+    cunit::CU
     lock::L
 end
 
-function _OnDevice{N}(f_device::F, device::D, lock::L) where {N,F,D,L<:Union{Nothing,ReentrantLock}}
-    return _OnDevice{N,F,D,L}(f_device, device, lock)
+function _OnDevice{N}(f_device::F, cunit::CU, lock::L) where {N,F,CU,L<:Union{Nothing,ReentrantLock}}
+    return _OnDevice{N,F,CU,L}(f_device, cunit, lock)
 end
 
 
 function (f::_OnDevice{N})(args::Vararg{Any,N}) where {N}
     cunit_orig = _check_orig_cunit(get_compute_unit(args))
-    adapted_args = adapt(f.device, args)
+    adapted_args = adapt(f.cunit, args)
     result = _run_maybe_with_lock(f.f_device, f.lock, adapted_args...)
     readapted_result = adapt(cunit_orig, result)
     return readapted_result

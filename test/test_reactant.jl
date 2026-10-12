@@ -103,6 +103,9 @@ Reactant.set_default_backend(get(ENV, "HETEROGENEOUSCOMPUTING_REACTANT_BACKEND",
             @test get_compute_unit(n1) == u1 && Float32(n1) == 2
             @test get_compute_unit(adapt(u1, (n0, a0))) == u1
             @test get_compute_unit(adapt(us, n0)) == us
+            scale_on_u1 = on_device((n, a) -> n .* a, u1, n0, a0)
+            scaled = scale_on_u1(n0, a0)
+            @test get_compute_unit(scaled) == u0 && Array(scaled) ≈ 2 .* Array(a0)
             @test get_compute_unit(adapt(us, rand(4))) == us
             ctx_s = GenContext{Float32}(us)
             @test get_compute_unit(get_rng(ctx_s)) == us
