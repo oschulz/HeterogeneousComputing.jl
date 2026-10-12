@@ -96,6 +96,8 @@ Reactant.set_default_backend(get(ENV, "HETEROGENEOUSCOMPUTING_REACTANT_BACKEND",
             @test us ==
                   get_compute_unit(Reactant.to_rarray(rand(6); sharding = Reactant.Sharding.NamedSharding(mesh, (:x,))))
             @test get_compute_unit(allocate_array(us, Float32, 4)) == us
+            s_on_u0 = adapt(u0, s)
+            @test get_compute_unit(s_on_u0) == u0 && Array(s_on_u0) == Array(s)
             @test get_compute_unit(adapt(us, rand(4))) == us
             ctx_s = GenContext{Float32}(us)
             @test get_compute_unit(get_rng(ctx_s)) == us

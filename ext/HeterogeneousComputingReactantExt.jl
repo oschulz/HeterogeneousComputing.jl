@@ -30,19 +30,22 @@ const _ConcreteTypes = Union{
 # A unit is a client and a device, or a client and the mesh of devices that
 # sharded arrays are distributed over. The unit keeps the mesh, but not how
 # individual arrays are partitioned over it. New arrays on the unit are
-# replicated over the mesh, like MLDataDevices does. Outside of compiled code,
-# a missing client or device is resolved like Reactant does when moving data,
-# within compiled code the location of values is unknown:
+# replicated over the mesh, like MLDataDevices does. Single-device units
+# state explicitly that their data isn't sharded, otherwise Reactant would
+# keep the mesh of arrays moved to them. Outside of compiled code, a missing
+# client or device is resolved like Reactant does when moving data, within
+# compiled code the location of values is unknown:
 function _canonical_device(dev::ReactantDevice)
-    mesh_sharding = _mesh_sharding(dev.sharding)
+    sharding = _mesh_sharding(dev.sharding)
     if within_compile()
         client, device = dev.client, dev.device
-    elseif mesh_sharding === missing
+    elseif sharding === missing
         client, device = _resolve_location(dev.client, something(dev.device, missing))
+        sharding = Sharding.NoSharding()
     else
         client, device = coalesce(dev.client, XLA.default_backend()), nothing
     end
-    return MLDataDevices.with_eltype(ReactantDevice(client, device, mesh_sharding), nothing)
+    return MLDataDevices.with_eltype(ReactantDevice(client, device, sharding), nothing)
 end
 
 _resolve_location(client, device) = (client, device)
@@ -88,6 +91,7 @@ _location_id(client::XLA.AbstractClient) = client.client
 _location_id(device::XLA.AbstractDevice) = device.device
 
 _same_mesh(::Missing, ::Missing) = true
+_same_mesh(::Sharding.NoSharding, ::Sharding.NoSharding) = true
 _same_mesh(a::Sharding.Replicated, b::Sharding.Replicated) = a.mesh.device_ids == b.mesh.device_ids
 _same_mesh(::Any, ::Any) = false
 
