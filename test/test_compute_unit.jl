@@ -12,6 +12,11 @@ using Random
 
 
 
+# Isbits handles for data on compute units:
+struct _TestHandle{unit_id} end
+HeterogeneousComputing.get_compute_unit_impl(::_TestHandle{1}) = CPUnit()
+HeterogeneousComputing.get_compute_unit_impl(::_TestHandle{2}) = AbstractComputeUnit(JLBackend())
+
 mutable struct _TestNode
     data::Vector{Float64}
     next::_TestNode
@@ -94,6 +99,9 @@ end
         @test @inferred(get_compute_unit((x = rand(Float32, 3), ctx = GenContext()))) === CPUnit()
         @test @inferred(get_compute_unit((GenContext{Float32}(),))) === CPUnit()  # isbits container
         @test @inferred(get_compute_unit((4.2, CPUnit()))) === CPUnit()
+        # Rules for isbits types apply within containers:
+        @test @inferred(get_compute_unit((_TestHandle{1}(),))) === CPUnit()
+        @test @inferred(get_compute_unit((a = _TestHandle{1}(), b = (2, _TestHandle{2}())))) === MixedComputeSystem()
         @test get_compute_unit((GenContext(Xoshiro(1)), GenContext(AbstractComputeUnit(JLBackend()), Xoshiro(2)))) ===
               MixedComputeSystem()
         jl_ctx = GenContext(AbstractComputeUnit(JLBackend()))
