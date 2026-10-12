@@ -10,8 +10,9 @@ unit of `device`) with arguments like `dummy_args`.
 The resulting function will only accept the same kind and number of arguments
 as `dummy_args`. It will automatically adapt the arguments to the target
 compute unit, and adapt the function result back to the compute unit of the
-arguments. Depending on the compute unit, `dummy_args` may or may not be used.
-Arguments on different compute units are not supported.
+arguments (or to the target compute unit, if the arguments aren't tied to a
+compute unit). Depending on the compute unit, `dummy_args` may or may not be
+used. Arguments on different compute units are not supported.
 
 Example:
 
@@ -54,11 +55,10 @@ end
 
 
 function (f::_OnDevice{N})(args::Vararg{Any,N}) where {N}
-    cunit_orig = _check_orig_cunit(get_compute_unit(args))
+    result_cunit = _result_cunit(get_compute_unit(args), f.cunit)
     adapted_args = adapt(f.cunit, args)
-    result = _run_maybe_with_lock(f.f_device, f.lock, adapted_args...)
-    readapted_result = adapt(cunit_orig, result)
-    return readapted_result
+    result = _within_unit(() -> _run_maybe_with_lock(f.f_device, f.lock, adapted_args...), f.cunit)
+    return adapt(result_cunit, result)
 end
 
 function (f::_OnDevice{N})(@nospecialize(args...)) where {N}
@@ -68,8 +68,10 @@ function (f::_OnDevice{N})(@nospecialize(args...)) where {N}
 end
 
 
-_check_orig_cunit(cunit) = cunit
-function _check_orig_cunit(::MixedComputeSystem)
+# Results go back to the compute unit of the arguments:
+_result_cunit(cunit_args, @nospecialize(cunit)) = cunit_args
+_result_cunit(::ComputeUnitIndependent, cunit::AbstractComputeUnit) = cunit
+function _result_cunit(::MixedComputeSystem, @nospecialize(cunit))
     return throw(ArgumentError("on_device function arguments are on different compute units"))
 end
 

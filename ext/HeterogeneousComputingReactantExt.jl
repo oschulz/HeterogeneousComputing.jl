@@ -164,9 +164,11 @@ function allocate_array(cunit::ReactantUnit, ::Type{T}, dims::Dims) where T
 end
 
 
+# Reactant compiles for the device of the arguments, or for the default
+# device of the client if the arguments don't have one:
 function HeterogeneousComputing.on_device(f, cunit::ReactantUnit, dummy_args::Vararg{Any,N}) where {N}
     f_device, args_device = adapt(cunit, (f, dummy_args))
-    f_compiled = compile(f_device, args_device)
+    f_compiled = compile(f_device, args_device; client = get_device(cunit).client)
     # Reactant-compiled functions are probably not thread-safe:
     lock = ReentrantLock()
     return _OnDevice{N}(f_compiled, cunit, lock)

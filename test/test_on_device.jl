@@ -30,4 +30,6 @@ using JLArrays: JLArray, JLBackend
     ctx = GenContext{Float32}()
     jl_rand = on_device(c -> rand(c, 3), AbstractComputeUnit(JLBackend()), ctx)
     @test jl_rand(ctx) isa Vector{Float32}
+    jl_ones = on_device(() -> fill_array(AbstractComputeUnit(JLBackend()), 1.0f0, 3), AbstractComputeUnit(JLBackend()))
+    @test jl_ones() isa JLArray{Float32}
 end
