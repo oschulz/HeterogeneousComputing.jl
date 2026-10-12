@@ -10,7 +10,7 @@ import HeterogeneousComputing:
 
 import Reactant
 using Reactant: ConcreteRArray, TracedRArray, TracedRNumber, ReactantRNG, within_compile
-using Reactant: XLA
+using Reactant: XLA, Sharding
 using Reactant.Compiler: compile
 
 import Adapt
@@ -26,18 +26,41 @@ const _ConcreteTypes = Union{
     Reactant.ConcreteIFRTArray,Reactant.ConcreteIFRTNumber
 }
 
-# Units don't track the sharding of individual arrays. Outside of compiled
-# code, a missing client or device is resolved like Reactant does when moving
-# data, within compiled code the location of values is unknown:
+# A unit is a client and a device, or a client and the mesh of devices that
+# sharded arrays are distributed over. The unit keeps the mesh, but not how
+# individual arrays are partitioned over it. New arrays on the unit are
+# replicated over the mesh, like MLDataDevices does. Outside of compiled code,
+# a missing client or device is resolved like Reactant does when moving data,
+# within compiled code the location of values is unknown:
 function _canonical_device(dev::ReactantDevice)
-    client, device = within_compile() ? (dev.client, dev.device) : _resolve_location(dev.client, dev.device)
-    return MLDataDevices.with_eltype(ReactantDevice(client, device, missing), nothing)
+    mesh_sharding = _mesh_sharding(dev.sharding)
+    if within_compile()
+        client, device = dev.client, dev.device
+    elseif mesh_sharding === missing
+        client, device = _resolve_location(dev.client, something(dev.device, missing))
+    else
+        client, device = coalesce(dev.client, XLA.default_backend()), nothing
+    end
+    return MLDataDevices.with_eltype(ReactantDevice(client, device, mesh_sharding), nothing)
 end
 
 _resolve_location(client, device) = (client, device)
 _resolve_location(::Missing, ::Missing) = _resolve_location(XLA.default_backend(), missing)
 _resolve_location(client, ::Missing) = (client, XLA.default_device(client))
-_resolve_location(::Missing, device) = (XLA.client(device), device)
+_resolve_location(::Missing, device::XLA.AbstractDevice) = (XLA.client(device), device)
+
+_mesh_sharding(::Missing) = missing
+_mesh_sharding(::Sharding.NoSharding) = missing
+_mesh_sharding(sharding::Sharding.AbstractSharding) = Sharding.Replicated(sharding.mesh)
+
+# MLDataDevices records the sharding of each array separately:
+function _mesh_sharding(shardings::IdDict)
+    mesh_shardings = filter(!ismissing, map(_mesh_sharding, collect(values(shardings))))
+    isempty(mesh_shardings) && return missing
+    allequal(s.mesh.device_ids for s in mesh_shardings) ||
+        throw(ArgumentError("Arrays are sharded over different device meshes"))
+    return first(mesh_shardings)
+end
 
 get_compute_unit_impl(x::_ConcreteTypes) = DeviceUnit(get_device(x))
 # The device of traced values is unknown within compiled code:
@@ -54,12 +77,18 @@ _is_partial(dev::ReactantDevice) = dev.client === missing
 # MLDataDevices treats unspecified and sharded (device `nothing`) locations as
 # equal to any location, units need a strict equality:
 function _same_device(a::ReactantDevice, b::ReactantDevice)
-    return _location_id(a.client) === _location_id(b.client) && _location_id(a.device) === _location_id(b.device)
+    return _location_id(a.client) === _location_id(b.client) &&
+           _location_id(a.device) === _location_id(b.device) &&
+           _same_mesh(a.sharding, b.sharding)
 end
 
 _location_id(x::Union{Missing,Nothing}) = x
 _location_id(client::XLA.AbstractClient) = client.client
 _location_id(device::XLA.AbstractDevice) = device.device
+
+_same_mesh(::Missing, ::Missing) = true
+_same_mesh(a::Sharding.Replicated, b::Sharding.Replicated) = a.mesh.device_ids == b.mesh.device_ids
+_same_mesh(::Any, ::Any) = false
 
 function compute_unit_mergerule(a::ReactantUnit, b::ReactantUnit)
     return _is_partial(a.device) && !_is_partial(b.device) ? b : HeterogeneousComputing.NoCUnitMergeRule()
@@ -69,15 +98,10 @@ end
 function MLDataDevices.default_device_rng(cunit::ReactantUnit)
     within_compile() && throw(ArgumentError("Random number generators for Reactant must be passed into compiled code"))
     # MLDataDevices.default_device_rng(::ReactantDevice) ignores client and device:
-    return adapt(_single_device(get_device(cunit)), Random.RandomDevice())
+    return adapt(get_device(cunit), Random.RandomDevice())
 end
 
 # MLDataDevices doesn't move ReactantRNGs between devices:
-function Adapt.adapt_storage(cunit::ReactantUnit, x::AbstractArray)
-    dev = within_compile() ? get_device(cunit) : _single_device(get_device(cunit))
-    return Adapt.adapt_storage(dev, x)
-end
-
 function Adapt.adapt_storage(cunit::ReactantUnit, rng::ReactantRNG)
     return get_compute_unit(rng) == cunit ? rng : ReactantRNG(adapt(get_device(cunit), rng.seed), rng.algorithm)
 end
@@ -106,16 +130,10 @@ function allocate_array(cunit::ReactantUnit, ::Type{T}, dims::Dims) where T
     if within_compile()
         return similar(TracedRArray{U}, dims)
     else
-        dev = _single_device(get_device(cunit))
-        return ConcreteRArray{U}(undef, dims; client = dev.client, device = dev.device)
+        dev = get_device(cunit)
+        sharding = coalesce(dev.sharding, Sharding.NoSharding())
+        return ConcreteRArray{U}(undef, dims; client = dev.client, device = dev.device, sharding)
     end
-end
-
-# Units of sharded arrays don't keep their sharding, so new arrays and RNGs
-# can't be placed accordingly outside of compiled code:
-function _single_device(dev::ReactantDevice)
-    dev.device === nothing && throw(ArgumentError("Can't place new data on a sharded Reactant compute unit"))
-    return dev
 end
 
 

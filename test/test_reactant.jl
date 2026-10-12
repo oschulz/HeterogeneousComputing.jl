@@ -89,9 +89,18 @@ Reactant.set_default_backend(get(ENV, "HETEROGENEOUSCOMPUTING_REACTANT_BACKEND",
             a1 = Reactant.to_rarray(rand(2); device = devs[2])
             @test get_compute_unit(s) != u0 && get_compute_unit(s) != u1
             @test get_compute_unit((a0, s, a1)) === MixedComputeSystem()
-            @test_throws ArgumentError allocate_array(get_compute_unit(s), Float32, 4)
-            @test_throws ArgumentError GenContext{Float32}(get_compute_unit(s))
-            @test_throws ArgumentError adapt(get_compute_unit(s), rand(4))
+            # Units of sharded arrays keep the device mesh, new data on them
+            # is replicated over it:
+            us = get_compute_unit(s)
+            @test us ==
+                  get_compute_unit(Reactant.to_rarray(rand(6); sharding = Reactant.Sharding.NamedSharding(mesh, (:x,))))
+            @test get_compute_unit(allocate_array(us, Float32, 4)) == us
+            @test get_compute_unit(adapt(us, rand(4))) == us
+            ctx_s = GenContext{Float32}(us)
+            @test get_compute_unit(get_rng(ctx_s)) == us
+            sy = Reactant.to_rarray(rand(Float32, 4); sharding = Reactant.Sharding.NamedSharding(mesh, (:x,)))
+            @test @jit(((ctx, y) -> y .+ randn(ctx, size(y)))(ctx_s, sy)) isa Reactant.ConcreteRArray{Float32,1}
+
 
             ctx0 = GenContext{Float32}(u0)
             @test get_compute_unit(get_rng(GenContext{Float32}(u1))) == u1

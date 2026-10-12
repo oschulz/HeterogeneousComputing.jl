@@ -230,14 +230,14 @@ DeviceUnit(dev::MLDataDevices.AbstractDevice)
 AbstractComputeUnit(dev::MLDataDevices.AbstractDevice)
 ```
 
-The device is normalized on construction: The unit has no element type
-(`adapt(cunit, x)` preserves numerical precision, use a [`GenContext`](@ref)
-to specify precision), and a device that refers to the currently active
-device (e.g. `CUDADevice()`) is resolved to that specific device. Reactant
-units also drop sharding and number tracking settings, like element types
-these are data movement policies, not properties of a compute unit. So units
-constructed from devices and units derived from data via
-[`get_compute_unit`](@ref) are equal.
+The device is normalized on construction, so that units constructed from
+devices and units derived from data via [`get_compute_unit`](@ref) are equal:
+The unit has no element type (`adapt(cunit, x)` preserves numerical precision,
+use a [`GenContext`](@ref) to specify precision), and a device that refers to
+the currently active device (e.g. `CUDADevice()`) is resolved to that device.
+Reactant units keep the device mesh of sharded arrays, but not how individual
+arrays are partitioned over it, and no number tracking settings. Like element
+types, these are policies for moving data, not properties of a compute unit.
 
 Throws an `ArgumentError` if the package that provides the device isn't
 loaded.
