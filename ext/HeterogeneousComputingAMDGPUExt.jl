@@ -3,9 +3,10 @@
 module HeterogeneousComputingAMDGPUExt
 
 import AMDGPU
+import Random
 
-using HeterogeneousComputing: DeviceUnit
-import HeterogeneousComputing: _canonical_device, _within_unit
+using HeterogeneousComputing: AbstractComputeUnit, DeviceUnit
+import HeterogeneousComputing: _canonical_device, _within_unit, _seeded_rng_like
 
 using MLDataDevices: AMDGPUDevice
 
@@ -22,6 +23,12 @@ function _within_unit(f, cunit::AMDGPUUnit)
     finally
         AMDGPU.device!(old_dev)
     end
+end
+
+function _seeded_rng_like(::AMDGPU.rocRAND.RNG, ::AbstractComputeUnit, seeds::NTuple{4,UInt64})
+    rng = AMDGPU.rocRAND.RNG()
+    Random.seed!(rng, seeds[1])
+    return rng
 end
 
 end # module HeterogeneousComputingAMDGPUExt

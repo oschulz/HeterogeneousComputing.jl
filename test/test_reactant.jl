@@ -89,6 +89,7 @@ Reactant.set_default_backend(get(ENV, "HETEROGENEOUSCOMPUTING_REACTANT_BACKEND",
             a1 = Reactant.to_rarray(rand(2); device = devs[2])
             @test get_compute_unit(s) != u0 && get_compute_unit(s) != u1
             @test get_compute_unit((a0, s, a1)) === MixedComputeSystem()
+
             # Units of sharded arrays keep the device mesh, new data on them
             # is replicated over it:
             us = get_compute_unit(s)
@@ -101,14 +102,21 @@ Reactant.set_default_backend(get(ENV, "HETEROGENEOUSCOMPUTING_REACTANT_BACKEND",
             sy = Reactant.to_rarray(rand(Float32, 4); sharding = Reactant.Sharding.NamedSharding(mesh, (:x,)))
             @test @jit(((ctx, y) -> y .+ randn(ctx, size(y)))(ctx_s, sy)) isa Reactant.ConcreteRArray{Float32,1}
 
-
-            ctx0 = GenContext{Float32}(u0)
+            # Contexts moved to another unit get an RNG derived from theirs,
+            # reproducibly, and the original RNG advances:
             @test get_compute_unit(get_rng(GenContext{Float32}(u1))) == u1
-            @test adapt(u0, ctx0).rng === get_rng(ctx0)
+            seeded_ctx0() = GenContext{Float32}(u0, Reactant.ReactantRNG(adapt(get_device(u0), UInt64[1, 2])))
+            ctx0 = seeded_ctx0()
+            @test adapt(u0, ctx0) === ctx0
             ctx1 = adapt(u1, ctx0)
             @test get_compute_unit(ctx1) == u1 && get_compute_unit(get_rng(ctx1)) == u1
+            @test Array(get_rng(ctx0).seed) != [1, 2]
+            @test Array(get_rng(ctx1).seed) == Array(get_rng(adapt(u1, seeded_ctx0())).seed)
+            @test Array(get_rng(adapt(u1, ctx0)).seed) != Array(get_rng(ctx1).seed)
             y1 = Reactant.to_rarray(rand(Float32, 3); device = devs[2])
             @test @jit(((ctx, y) -> y .+ randn(ctx, size(y)))(ctx1, y1)) isa Reactant.ConcreteRArray{Float32,1}
+            @test adapt(CPUnit(), ctx0) isa GenContext{Float32,CPUnit,Xoshiro}
+            @test get_compute_unit(get_rng(adapt(u1, GenContext{Float32}(Xoshiro(1))))) == u1
         end
     end
 

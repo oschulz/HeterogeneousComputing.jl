@@ -7,6 +7,7 @@ using HeterogeneousComputing: _OnDevice
 import HeterogeneousComputing: get_compute_unit_impl, get_precision_fromtype, allocate_array, compute_unit_mergerule
 import HeterogeneousComputing:
     _canonical_device, _same_device, _fill_random!, _draw_scalar, _scalar_randfun, _RecurseFields, _gen_convert
+import HeterogeneousComputing: _draw_seeds, _seeded_rng
 
 import Reactant
 using Reactant: ConcreteRArray, TracedRArray, TracedRNumber, ReactantRNG, within_compile
@@ -101,12 +102,23 @@ function MLDataDevices.default_device_rng(cunit::ReactantUnit)
     return adapt(get_device(cunit), Random.RandomDevice())
 end
 
-# MLDataDevices doesn't move ReactantRNGs between devices:
-function Adapt.adapt_storage(cunit::ReactantUnit, rng::ReactantRNG)
-    return get_compute_unit(rng) == cunit ? rng : ReactantRNG(adapt(get_device(cunit), rng.seed), rng.algorithm)
+function _seeded_rng(cunit::ReactantUnit, seeds::NTuple{4,UInt64})
+    return ReactantRNG(adapt(get_device(cunit), UInt64[seeds[1], seeds[2]]))
 end
 
 const _ConcreteRNG = ReactantRNG{<:Reactant.AbstractConcreteArray}
+
+# Reactant RNGs can't draw outside of compiled code, so new seeds and a new
+# state are derived from the current state instead:
+function _draw_seeds(rng::_ConcreteRNG, ::AbstractComputeUnit)
+    tmp = Random.Xoshiro(Array(rng.seed))
+    Random.seed!(rng, rand(tmp, UInt64, length(rng.seed)))
+    return ntuple(_ -> rand(tmp, UInt64), Val(4))
+end
+
+function _draw_seeds(::ReactantRNG{<:TracedRArray}, ::AbstractComputeUnit)
+    return throw(ArgumentError("Contexts can't be adapted to other compute units within compiled code"))
+end
 
 function _no_eager_draws()
     return throw(

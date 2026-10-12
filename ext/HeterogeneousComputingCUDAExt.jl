@@ -7,6 +7,7 @@ import CUDA
 using HeterogeneousComputing
 import HeterogeneousComputing: ka_backend, allocate_array, get_total_memory, get_free_memory
 import HeterogeneousComputing: get_compute_unit_impl, _device_loaded, _canonical_device, _within_unit
+import HeterogeneousComputing: _seeded_rng_like
 
 using MLDataDevices: CUDADevice
 
@@ -40,6 +41,9 @@ _within_unit(f, cunit::CUDAUnit) = CUDA.device!(f, _cudevice(cunit))
 allocate_array(cunit::CUDAUnit, ::Type{T}, dims::Dims) where T = _within_unit(() -> CUDA.CuArray{T}(undef, dims), cunit)
 
 ka_backend(::CUDAUnit) = CUDA.CUDABackend()
+
+# The default RNG of CUDA v5, an alias for the GPUArrays RNG on CUDA v6:
+_seeded_rng_like(::CUDA.RNG, ::AbstractComputeUnit, seeds::NTuple{4,UInt64}) = CUDA.RNG(seeds[1])
 
 
 # Native cuRAND RNGs aren't tied to a device, library RNGs are bound to a CUDA

@@ -42,8 +42,12 @@ CUDA.allowscalar(false)
     library_rng() = isdefined(CUDA, :cuRAND) ? CUDA.cuRAND.LibraryRNG() : CUDA.CURAND.RNG()
     @test GenContext{Float32}(library_rng()).cunit === cunit
     test_gencontext_draws(GenContext{Float32}(library_rng()))
-    @test_throws ArgumentError adapt(CPUnit(), GenContext{Float32}(library_rng()))
+    # Contexts moved to other units get RNGs derived from theirs:
+    @test adapt(CPUnit(), GenContext{Float32}(library_rng())) isa GenContext{Float32,CPUnit,Xoshiro}
     @test get_compute_unit(adapt(CPUnit(), GenContext{Float32}(cunit))) === CPUnit()
+    derived_cuda() = adapt(cunit, GenContext{Float32}(Xoshiro(1)))
+    @test get_compute_unit(get_rng(derived_cuda())) === cunit
+    @test Array(rand(derived_cuda(), 3)) == Array(rand(derived_cuda(), 3))
 
     test_gencontext_draws(ctx)
     test_gencontext_draws(GenContext{Float64}(cunit))

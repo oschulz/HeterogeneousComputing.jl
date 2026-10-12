@@ -81,14 +81,26 @@ using Adapt: adapt
         @test randexp!(jl_ctx, view(A, 1:2:5)) isa SubArray
         @test all(x -> 0 <= x < Inf, Array(A)[1:2:5])
 
-        @test adapt(jl_unit, GenContext{Float32}()) isa GenContext{Float32,typeof(jl_unit),<:GPUArrays.RNG}
-        @test get_compute_unit(adapt(CPUnit(), GenContext{Float32}(jl_unit, Xoshiro(1)))) === CPUnit()
-        @test get_compute_unit(adapt(CPUnit(), jl_ctx)) === CPUnit()
-        # RNGs with state on other compute units can't be used:
-        @test_throws ArgumentError adapt(
-            CPUnit(),
-            GenContext{Float32}(jl_unit, _TestDeviceRNG(JLArray(rand(UInt64, 4))))
-        )
+        # Host RNGs stay with contexts moved to host units, otherwise a new
+        # RNG native to the target unit is derived, reproducibly, and the
+        # original RNG advances:
+        host_rng = Xoshiro(1)
+        @test adapt(CPUnit(), GenContext{Float32}(jl_unit, host_rng)).rng === host_rng
+        derived_jl() = adapt(jl_unit, GenContext{Float32}(Xoshiro(1)))
+        @test derived_jl() isa GenContext{Float32,typeof(jl_unit),<:GPUArrays.RNG}
+        @test Array(rand(derived_jl(), 3)) == Array(rand(derived_jl(), 3))
+        adapt(jl_unit, GenContext{Float32}(host_rng))
+        @test rand(host_rng) != rand(Xoshiro(1))
+        derived_cpu() = adapt(CPUnit(), GenContext{Float32}(jl_unit, GPUArrays.RNG{JLArray}(42)))
+        @test derived_cpu() isa GenContext{Float32,CPUnit,Xoshiro}
+        @test rand(derived_cpu(), 3) == rand(derived_cpu(), 3)
+        @test rand(adapt(CPUnit(), jl_ctx), 3) != rand(adapt(CPUnit(), jl_ctx), 3)
+        Random.seed!(7)
+        from_default_1 = adapt(jl_unit, GenContext{Float32}())
+        Random.seed!(7)
+        from_default_2 = adapt(jl_unit, GenContext{Float32}())
+        @test from_default_1 isa GenContext{Float32,typeof(jl_unit),<:GPUArrays.RNG}
+        @test Array(rand(from_default_1, 3)) == Array(rand(from_default_2, 3))
     end
 
     @testset "exponential from uniform variates" begin

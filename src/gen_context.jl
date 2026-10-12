@@ -39,6 +39,11 @@ precision, compute unit and random number generator of the context.
 of random numbers with precision `T` on the compute unit of `ctx`,
 `rand!(ctx, A)`, `randn!(ctx, A)` and `randexp!(ctx, A)` fill `A` (which
 should reside on the compute unit of `ctx`) with random numbers.
+
+`adapt(cunit, ctx)` moves a context to the compute unit `cunit`. The random
+number generator stays if it is native to `cunit`, otherwise a new generator
+native to `cunit` is created, seeded with random numbers drawn from the old
+one.
 """
 struct GenContext{T<:AbstractFloat,CU<:AbstractComputeUnit,RNG<:AbstractRNG}
     cunit::CU
@@ -116,36 +121,58 @@ get_precision_fromtype(::Type{<:GenContext{T}}) where T = T
 get_compute_unit_impl(ctx::GenContext) = ctx.cunit
 get_rng(ctx::GenContext) = ctx.rng
 
-# Adapting a context to a compute unit or device moves it to that unit:
+# Adapting a context to a compute unit or device moves it to that unit. The
+# RNG stays if it is native to that unit, otherwise a native RNG is derived
+# from it:
 function Adapt.adapt_structure(to, ctx::GenContext{T}) where T
-    target = _adapt_target(to)
-    cunit = _adapted_cunit(target, ctx.cunit)
+    cunit = _adapted_cunit(_adapt_target(to), ctx.cunit)
     cunit == ctx.cunit && return ctx
-    return GenContext{T}(cunit, _adapted_rng(target, cunit, ctx.rng))
+    rng = _rng_native_to(get_compute_unit(ctx.rng), cunit) ? ctx.rng : _derived_rng(ctx, cunit)
+    return GenContext{T}(cunit, rng)
 end
-
-# Contexts with the default RNG get the default RNG of the target:
-_adapted_rng(@nospecialize(target), cunit::AbstractComputeUnit, ::Random.TaskLocalRNG) = default_device_rng(cunit)
-
-function _adapted_rng(target, cunit::AbstractComputeUnit, rng::AbstractRNG)
-    adapted_rng = adapt(target, rng)
-    _rng_usable_on(get_compute_unit(adapted_rng), cunit) ||
-        throw(ArgumentError("Can't adapt random number generator of type $(typeof(rng)) to compute unit $cunit"))
-    return adapted_rng
-end
-
-# Host RNGs can be used with any compute unit, device RNGs only with their own:
-function _rng_usable_on(rng_cunit::AbstractComputeUnit, cunit::AbstractComputeUnit)
-    return is_host_unit(rng_cunit) || rng_cunit == cunit
-end
-_rng_usable_on(::ComputeUnitIndependent, ::AbstractComputeUnit) = true
-_rng_usable_on(::Any, ::AbstractComputeUnit) = false
 
 _adapt_target(dev::AbstractDevice) = DeviceUnit(dev)
 _adapt_target(@nospecialize(to)) = to
 
 _adapted_cunit(to::AbstractComputeUnit, ::AbstractComputeUnit) = to
 _adapted_cunit(@nospecialize(to), cunit::AbstractComputeUnit) = cunit
+
+# Host RNGs are native to host units, device RNGs to their own unit:
+_rng_native_to(::ComputeUnitIndependent, cunit::AbstractComputeUnit) = is_host_unit(cunit)
+_rng_native_to(rng_cunit::AbstractComputeUnit, cunit::AbstractComputeUnit) = rng_cunit == cunit
+_rng_native_to(::Any, ::AbstractComputeUnit) = false
+
+# A new RNG native to `cunit`, seeded with random numbers drawn from the RNG
+# of `ctx`:
+_derived_rng(ctx::GenContext, cunit::AbstractComputeUnit) = _seeded_rng(cunit, _draw_seeds(ctx))
+
+function _draw_seeds(ctx::GenContext)
+    return _draw_seeds(ctx.rng, _rng_home(get_compute_unit(ctx.rng), ctx.cunit))
+end
+
+# The compute unit on which an RNG generates numbers:
+_rng_home(rng_cunit::AbstractComputeUnit, ::AbstractComputeUnit) = rng_cunit
+_rng_home(::ComputeUnitIndependent, ::AbstractComputeUnit) = CPUnit()
+_rng_home(::Any, cunit::AbstractComputeUnit) = cunit
+
+# Draws four 64-bit seeds as 32-bit integers, which all RNGs support:
+function _draw_seeds(rng::AbstractRNG, home::AbstractComputeUnit)
+    A = allocate_array(home, UInt32, (8,))
+    _within_unit(() -> _fill_random!(Random.rand!, rng, A), home)
+    u = Array(A)
+    return ntuple(i -> UInt64(u[2i - 1]) | UInt64(u[2i]) << 32, Val(4))
+end
+
+# A new RNG of the same kind as the default RNG of `cunit`:
+function _seeded_rng(cunit::AbstractComputeUnit, seeds::NTuple{4,UInt64})
+    return _within_unit(() -> _seeded_rng_like(default_device_rng(cunit), cunit, seeds), cunit)
+end
+
+_seeded_rng_like(::Random.TaskLocalRNG, ::AbstractComputeUnit, seeds::NTuple{4,UInt64}) = Xoshiro(collect(seeds))
+
+function _seeded_rng_like(rng::AbstractRNG, cunit::AbstractComputeUnit, ::NTuple{4,UInt64})
+    return throw(ArgumentError("Don't know how to create a new RNG like $(typeof(rng)) for compute unit $cunit"))
+end
 
 
 for (randfun, randfun!) in ((:rand, :rand!), (:randn, :randn!), (:randexp, :randexp!))
