@@ -1,8 +1,7 @@
 # This file is a part of HeterogeneousComputing.jl, licensed under the MIT License (MIT).
 
-# Field recursion of `get_compute_unit`. Included last, since the generated
-# function depends on all code that its generator uses being defined before
-# it.
+# Field recursion of `get_compute_unit`. Included last, since generated
+# functions only see code defined before them.
 
 # `visited` is `nothing` or a `Base.IdSet` of visited objects that may be part of
 # reference loops:
@@ -54,7 +53,8 @@ function _has_cunit_rule(@nospecialize(T::Type))
            (isdefined(Core, :Memory) && T <: Core.Memory)
 end
 
-# Isbits types can contain compute units and contexts, which have rules:
+# Isbits types may contain compute units or contexts, which have rules of
+# their own:
 function _isbits_without_cunit_rules(@nospecialize(T::Type))
     isbitstype(T) || return false
     seen = Set{Any}()
@@ -70,8 +70,8 @@ function _isbits_without_cunit_rules(@nospecialize(T::Type))
 end
 
 # Whether objects of type T may be part of a reference loop. Loops need a
-# mutable object that can reach itself: either via fields of non-concrete
-# type or via concretely typed fields only.
+# mutable object that can reach itself, through fields of non-concrete type
+# or through a chain of concretely typed fields.
 function _may_close_ref_loop(@nospecialize(T::Type))
     ismutabletype(T) || return false
     seen = Set{Any}()
@@ -94,8 +94,8 @@ _visit!(visited::Base.IdSet{Any}, x) = x in visited ? _AlreadyVisited() : push!(
 
 
 # The recursion through fields of concrete types is inlined into a single
-# generated function body, since inference would give up on recursive calls
-# of the same method with nested types:
+# generated function body, since inference gives up on recursive calls of
+# the same method for nested types:
 @generated function _get_fields_cunit(x, visited)
     body = Expr(:block)
     if _may_close_ref_loop(x)
