@@ -13,15 +13,17 @@ on:
 
 concurrency:
   # Skip intermediate builds: always.
-  # Cancel intermediate builds: only if it is a pull request build.
+  # Cancel intermediate builds: except on main, where every push runs
+  # to completion.
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ startsWith(github.ref, 'refs/pull/') }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   test:
     name: Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }} - ${{ github.event_name }}
     runs-on: ${{ matrix.os }}
-    continue-on-error: ${{ matrix.version == 'nightly' }}
+    timeout-minutes: 60
+    continue-on-error: ${{ matrix.version == 'pre' || matrix.version == 'nightly' }}
     strategy:
       fail-fast: false
       matrix:
@@ -62,9 +64,33 @@ jobs:
           fail_ci_if_error: true
           token: ${{ secrets.CODECOV_TOKEN }}
           files: lcov.info
+  test-bare:
+    name: Package load without weak dependencies
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: '1'
+      - uses: julia-actions/cache@v3
+      - name: Load and smoke-test without weak dependencies
+        run: >
+          julia --color=yes -e '
+          import Pkg;
+          Pkg.activate(temp = true);
+          Pkg.develop(path = pwd());
+          using HeterogeneousComputing;
+          ctx = GenContext{Float32}();
+          @assert get_compute_unit(ctx) === CPUnit();
+          @assert randn(ctx, 3) isa Vector{Float32};
+          @assert get_compute_unit((rand(2), (a = 1.0, b = view(rand(4), 1:2)))) === CPUnit();
+          @assert get_gencontext(rand(Float32, 3)) isa GenContext{Float32};
+          @assert on_device(sum, CPUnit(), rand(3))(rand(3)) isa Float64'
   docs:
     name: Documentation
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v7
       - uses: julia-actions/setup-julia@v3
