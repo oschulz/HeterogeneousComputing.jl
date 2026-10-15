@@ -8,6 +8,8 @@
 using HeterogeneousComputing
 using Test
 
+# Must be set before Reactant loads XLA, which otherwise grabs most GPU memory:
+haskey(ENV, "XLA_REACTANT_GPU_MEM_FRACTION") || (ENV["XLA_REACTANT_GPU_MEM_FRACTION"] = "0.4")
 # Two CPU devices for multi-device tests (only effective before Reactant
 # initializes its CPU client):
 ENV["XLA_FLAGS"] = get(ENV, "XLA_FLAGS", "") * " --xla_force_host_platform_device_count=2"
