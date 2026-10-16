@@ -17,7 +17,7 @@ KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
 Reactant = "3c362404-f566-11ee-1572-e11a4b42c853"
 
 [extensions]
-HeterogeneousComputingAMDGPUExt = "AMDGPU"
+HeterogeneousComputingAMDGPUExt = ["AMDGPU", "GPUArrays"]
 HeterogeneousComputingCUDAExt = "CUDA"
 HeterogeneousComputingGPUArraysExt = "GPUArrays"
 HeterogeneousComputingJLArraysExt = ["JLArrays", "GPUArrays"]

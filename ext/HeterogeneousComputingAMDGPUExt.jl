@@ -3,11 +3,12 @@
 module HeterogeneousComputingAMDGPUExt
 
 import AMDGPU
-import Random
+import GPUArrays
 
-using HeterogeneousComputing: AbstractComputeUnit, DeviceUnit
-import HeterogeneousComputing: _canonical_device, _within_unit, _seeded_rng_like
+using HeterogeneousComputing: DeviceUnit
+import HeterogeneousComputing: _canonical_device, _within_unit
 
+import MLDataDevices
 using MLDataDevices: AMDGPUDevice
 
 
@@ -25,10 +26,9 @@ function _within_unit(f, cunit::AMDGPUUnit)
     end
 end
 
-function _seeded_rng_like(::AMDGPU.rocRAND.RNG, ::AbstractComputeUnit, seeds::NTuple{4,UInt64})
-    rng = AMDGPU.rocRAND.RNG()
-    Random.seed!(rng, seeds[1])
-    return rng
-end
+# rocRAND generators are bound to the device they were created on without
+# recording it, so contexts use the GPUArrays RNG, which generates on the
+# device of the array it fills (like CUDA v6 does by default):
+MLDataDevices.default_device_rng(::AMDGPUUnit) = GPUArrays.RNG{AMDGPU.ROCArray}()
 
 end # module HeterogeneousComputingAMDGPUExt

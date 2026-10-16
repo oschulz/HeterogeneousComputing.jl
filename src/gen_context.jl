@@ -26,7 +26,9 @@ NoGenContext(::Type{T}) where T = NoGenContext{Type{T}}()
 Context for generative computations, with numerical precision `T`.
 
 `GenContext(rng)` derives the compute unit from `rng` (e.g. for GPU RNGs), and
-uses `CPUnit()` for host RNGs.
+uses `CPUnit()` for host RNGs. RNGs that don't record their device, like
+`GPUArrays.RNG` and rocRAND generators, are taken to be on the currently
+active device.
 
 When constructed from an `MLDataDevices` device without an explicit `T`, the
 precision is `eltype(dev)` if that is a floating point type, `Float64`
