@@ -18,11 +18,11 @@ Base.typejoin(::Type{NoPrecision{T}}, ::Type{<:NoPrecision}) where T = NoPrecisi
         Type{<:HeterogeneousComputing.NoPrecision}
     }
 
-Returns the numerical precision of used by `x` or [`NoPrecision{T}`](@ref)
+Returns the numerical precision used by `x` or [`NoPrecision{T}`](@ref)
 if no numerical precision can be determined for `x`.
 
 In general, do not specialize `get_precision`, specialize
-[`get_precision_fromtype`](@ref)  instead.
+[`get_precision_fromtype`](@ref) instead.
 """
 function get_precision end
 export get_precision
@@ -33,15 +33,20 @@ get_precision(::T) where {T} = get_precision_fromtype(T)
 """
     get_precision_fromtype(::Type{T})
 
-Returns the numberical precision accociate with type `T` or
+Returns the numerical precision associated with type `T` or
 [`NoPrecision{T}`](@ref) if no numerical precision can be determined for type
 `T`.
+
+Concrete types derive their precision from their field types, abstract types
+have no precision.
 """
 function get_precision_fromtype end
 export get_precision_fromtype
 
 # ToDo: Improve type stability of generic implementation.
-get_precision_fromtype(::Type{T}) where T = _get_precision_from_fieldtypes(T, fieldtypes(T))
+function get_precision_fromtype(::Type{T}) where T
+    return isconcretetype(T) ? _get_precision_from_fieldtypes(T, fieldtypes(T)) : NoPrecision{T}
+end
 
 _get_precision_from_fieldtypes(::Type{T}, ::Tuple{}) where T = NoPrecision{T}
 
@@ -49,7 +54,7 @@ function _get_precision_from_fieldtypes(::Type{T}, ftypes::Tuple) where T
     return promote_type(map(get_precision_fromtype, ftypes)...)
 end
 
-get_precision_fromtype(::Type{T}) where {T<:AbstractFloat} = T
+get_precision_fromtype(::Type{T}) where {T<:AbstractFloat} = isconcretetype(T) ? T : NoPrecision{T}
 get_precision_fromtype(::Type{Tuple{}}) = NoPrecision{Tuple{}}
 get_precision_fromtype(::Type{T}) where {T<:Integer} = NoPrecision{T}
 get_precision_fromtype(::Type{T}) where {T<:Union{AbstractString,Symbol}} = NoPrecision{T}
