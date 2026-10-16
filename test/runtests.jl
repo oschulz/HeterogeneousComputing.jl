@@ -10,13 +10,19 @@ Test.@testset "Package HeterogeneousComputing" begin
     # release suffices; Julia 1.10's parallel precompilation is prone to
     # deadlock on Reactant's large extension set. Reactant is added before
     # any other test dependency is loaded, since adding it changes the
-    # versions of their dependencies (LLVM via GPUArrays):
+    # versions of their dependencies (LLVM via GPUArrays). The environment
+    # is precompiled as a whole afterwards, since the automatic
+    # precompilation of the changed packages fails for indirect
+    # dependencies on Julia v1.13.2:
     test_reactant =
         Sys.islinux() && Sys.ARCH in (:x86_64, :aarch64) && isempty(VERSION.prerelease) &&
         VERSION >= v"1.11"
     if test_reactant
         import Pkg
-        Base.identify_package("Reactant") === nothing && Pkg.add("Reactant")
+        if Base.identify_package("Reactant") === nothing
+            Pkg.add("Reactant"; allow_autoprecomp = false)
+            Pkg.precompile()
+        end
     end
 
     include("testutils.jl")
