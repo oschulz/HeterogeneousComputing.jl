@@ -7,12 +7,12 @@
 Returns a function that runs `f` on the compute unit `cunit` (or the compute
 unit of `device`) with arguments like `dummy_args`.
 
-The resulting function will only accept the same kind and number of arguments
-as `dummy_args`. It will automatically adapt the arguments to the target
-compute unit, and adapt the function result back to the compute unit of the
-arguments (or to the target compute unit, if the arguments aren't tied to a
-compute unit). Depending on the compute unit, `dummy_args` may or may not be
-used. Arguments on different compute units are not supported.
+The resulting function only accepts the same kind and number of arguments as
+`dummy_args`. It adapts the arguments to `cunit` and the result back to the
+compute unit of the arguments, or leaves the result on `cunit` if the
+arguments aren't tied to any compute unit. Arguments on different compute
+units are not supported. Depending on the compute unit, `dummy_args` may or
+may not be used.
 
 Example:
 

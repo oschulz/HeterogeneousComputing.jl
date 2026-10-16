@@ -108,8 +108,8 @@ Reactant.set_default_backend(get(ENV, "HETEROGENEOUSCOMPUTING_REACTANT_BACKEND",
             scale_on_u1 = on_device((n, a) -> n .* a, u1, n0, a0)
             scaled = scale_on_u1(n0, a0)
             @test get_compute_unit(scaled) == u0 && Array(scaled) ≈ 2 .* Array(a0)
-            # Results of functions without arguments on a compute unit stay
-            # on the target unit:
+            # Results of functions whose arguments aren't on any compute unit
+            # stay on the target unit:
             ones_on_u1 = on_device(() -> fill_array(u1, 1.0f0, 3), u1)
             @test get_compute_unit(ones_on_u1()) == u1
             @test get_compute_unit(adapt(us, rand(4))) == us

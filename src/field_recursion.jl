@@ -47,8 +47,8 @@ function _field_cunit_expr(@nospecialize(FT::Type), f::Symbol, vex, depth::Int)
 end
 
 # Primitive types and tuples of them (e.g. the data of static arrays) are
-# independent of compute units, there's no need to generate code for each
-# element:
+# independent of compute units, so there's no need to generate code for
+# each element:
 _is_primitive_data(@nospecialize(T::Type)) = isprimitivetype(T) || (T <: Tuple && all(isprimitivetype, fieldtypes(T)))
 
 # Types with compute unit rules in HeterogeneousComputing itself, no need to

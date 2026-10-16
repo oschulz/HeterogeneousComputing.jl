@@ -33,8 +33,8 @@ const _ConcreteTypes = Union{
 # replicated over the mesh, like MLDataDevices does. Single-device units
 # state explicitly that their data isn't sharded, otherwise Reactant would
 # keep the mesh of arrays moved to them. Outside of compiled code, a missing
-# client or device is resolved like Reactant does when moving data, within
-# compiled code the location of values is unknown:
+# client or device is resolved like Reactant does when moving data. Within
+# compiled code, the location of values is unknown:
 function _canonical_device(dev::ReactantDevice)
     sharding = _mesh_sharding(dev.sharding)
     if within_compile()
