@@ -10,7 +10,7 @@ Uses type promotion among underlying `Real` type in `T`.
 Non numerical types that are commonly used to express default and missing
 values or named choices/options are treated as `Bool`.
 
-In contract to [`get_precision_fromtype`](@ref), the function `real_numtype`
+In contrast to [`get_precision_fromtype`](@ref), the function `real_numtype`
 may also return subtypes of `Integer` and will preserve types like
 `ForwardDiff.Dual`.
 

@@ -1,21 +1,177 @@
+# This file is a part of HeterogeneousComputing.jl, licensed under the MIT License (MIT).
+
 module HeterogeneousComputingReactantExt
 
 using HeterogeneousComputing
 using HeterogeneousComputing: _OnDevice
+import HeterogeneousComputing: get_compute_unit_impl, get_precision_fromtype, allocate_array, compute_unit_mergerule
+import HeterogeneousComputing:
+    _canonical_device, _same_device, _fill_random!, _draw_scalar, _scalar_randfun, _RecurseFields, _gen_convert
+import HeterogeneousComputing: _draw_seeds, _seeded_rng
 
+import Reactant
+using Reactant: ConcreteRArray, TracedRArray, TracedRNumber, ReactantRNG, within_compile
+using Reactant: XLA, Sharding
 using Reactant.Compiler: compile
 
+import Adapt
 using Adapt: adapt
-using MLDataDevices: ReactantDevice
+using MLDataDevices: MLDataDevices, ReactantDevice, get_device, default_device_rng
+import Random
 
 
-function HeterogeneousComputing.on_device(f, device::ReactantDevice, dummy_args::Vararg{Any,N}) where {N}
-    f_device, args_device = adapt(device, (f, dummy_args))
-    f_compiled = compile(f_device, args_device)
-    # Reactant-compiled functions are probably not thread-safe:
-    lock = ReentrantLock()
-    return _OnDevice{N}(f_compiled, device, lock)
+const ReactantUnit = DeviceUnit{<:ReactantDevice}
+
+const _ConcreteTypes = Union{
+    Reactant.ConcretePJRTArray,Reactant.ConcretePJRTNumber,
+    Reactant.ConcreteIFRTArray,Reactant.ConcreteIFRTNumber
+}
+
+# A unit is a client and a device, or a client and the mesh of devices that
+# sharded arrays are distributed over. The unit keeps the mesh, but not how
+# individual arrays are partitioned over it. New arrays on the unit are
+# replicated over the mesh, like MLDataDevices does. Single-device units
+# state explicitly that their data isn't sharded, otherwise Reactant would
+# keep the mesh of arrays moved to them. Outside of compiled code, a missing
+# client or device is resolved like Reactant does when moving data. Within
+# compiled code, the location of values is unknown:
+function _canonical_device(dev::ReactantDevice)
+    sharding = _mesh_sharding(dev.sharding)
+    if within_compile()
+        client, device = dev.client, dev.device
+    elseif sharding === missing
+        client, device = _resolve_location(dev.client, something(dev.device, missing))
+        sharding = Sharding.NoSharding()
+    else
+        client, device = coalesce(dev.client, XLA.default_backend()), nothing
+    end
+    return MLDataDevices.with_eltype(ReactantDevice(client, device, sharding), nothing)
 end
 
+_resolve_location(client, device) = (client, device)
+_resolve_location(::Missing, ::Missing) = _resolve_location(XLA.default_backend(), missing)
+_resolve_location(client, ::Missing) = (client, XLA.default_device(client))
+_resolve_location(::Missing, device::XLA.AbstractDevice) = (XLA.client(device), device)
+
+_mesh_sharding(::Missing) = missing
+_mesh_sharding(::Sharding.NoSharding) = missing
+_mesh_sharding(sharding::Sharding.AbstractSharding) = Sharding.Replicated(sharding.mesh)
+
+# MLDataDevices records the sharding of each array separately:
+function _mesh_sharding(shardings::IdDict)
+    mesh_shardings = filter(!ismissing, map(_mesh_sharding, collect(values(shardings))))
+    isempty(mesh_shardings) && return missing
+    allequal(s.mesh.device_ids for s in mesh_shardings) ||
+        throw(ArgumentError("Arrays are sharded over different device meshes"))
+    return first(mesh_shardings)
+end
+
+get_compute_unit_impl(x::_ConcreteTypes) = DeviceUnit(get_device(x))
+# The device of traced values is unknown within compiled code:
+function get_compute_unit_impl(::Union{TracedRArray,TracedRNumber})
+    return DeviceUnit(ReactantDevice())
+end
+# get_device fails for ReactantRNGs within compiled code, use their fields:
+get_compute_unit_impl(::ReactantRNG) = _RecurseFields()
+
+# Units derived within compiled code specify neither client nor device, and
+# merge with any unit that does:
+_is_partial(dev::ReactantDevice) = dev.client === missing
+
+# MLDataDevices treats unspecified and sharded (device `nothing`) locations as
+# equal to any location, units need a strict equality:
+function _same_device(a::ReactantDevice, b::ReactantDevice)
+    return _location_id(a.client) === _location_id(b.client) &&
+           _location_id(a.device) === _location_id(b.device) &&
+           _same_mesh(a.sharding, b.sharding)
+end
+
+_location_id(x::Union{Missing,Nothing}) = x
+_location_id(client::XLA.AbstractClient) = client.client
+_location_id(device::XLA.AbstractDevice) = device.device
+
+_same_mesh(::Missing, ::Missing) = true
+_same_mesh(::Sharding.NoSharding, ::Sharding.NoSharding) = true
+_same_mesh(a::Sharding.Replicated, b::Sharding.Replicated) = a.mesh.device_ids == b.mesh.device_ids
+_same_mesh(::Any, ::Any) = false
+
+function compute_unit_mergerule(a::ReactantUnit, b::ReactantUnit)
+    return _is_partial(a.device) && !_is_partial(b.device) ? b : HeterogeneousComputing.NoCUnitMergeRule()
+end
+
+# A new RNG created within compiled code would have a fixed seed:
+function MLDataDevices.default_device_rng(cunit::ReactantUnit)
+    within_compile() && throw(ArgumentError("Random number generators for Reactant must be passed into compiled code"))
+    # MLDataDevices.default_device_rng(::ReactantDevice) ignores client and device:
+    return adapt(get_device(cunit), Random.RandomDevice())
+end
+
+function _seeded_rng(cunit::ReactantUnit, seeds::NTuple{4,UInt64})
+    return ReactantRNG(adapt(get_device(cunit), UInt64[seeds[1], seeds[2]]))
+end
+
+const _ConcreteRNG = ReactantRNG{<:Reactant.AbstractConcreteArray}
+
+# Reactant RNGs can't draw outside of compiled code, so new seeds and a new
+# state are derived from the current state instead:
+function _draw_seeds(rng::_ConcreteRNG, ::AbstractComputeUnit)
+    tmp = Random.Xoshiro(Array(rng.seed))
+    Random.seed!(rng, rand(tmp, UInt64, length(rng.seed)))
+    return ntuple(_ -> rand(tmp, UInt64), Val(4))
+end
+
+function _draw_seeds(::ReactantRNG{<:TracedRArray}, ::AbstractComputeUnit)
+    return throw(ArgumentError("Contexts can't be adapted to other compute units within compiled code"))
+end
+
+function _no_eager_draws()
+    return throw(
+        ArgumentError("Random numbers from Reactant random number generators can only be drawn within compiled code")
+    )
+end
+
+_fill_random!(::F, ::_ConcreteRNG, ::AbstractArray) where {F} = _no_eager_draws()
+_draw_scalar(::F, ::_ConcreteRNG, ::Type{T}, ::AbstractComputeUnit) where {F,T} = _no_eager_draws()
+# Reactant supports scalar draws within compiled code:
+function _draw_scalar(f!::F, rng::ReactantRNG{<:TracedRArray}, ::Type{T}, ::AbstractComputeUnit) where {F,T}
+    return _scalar_randfun(f!)(rng, T)
+end
+
+get_precision_fromtype(::Type{<:Reactant.RNumber{T}}) where T = get_precision_fromtype(T)
+
+# MLDataDevices only moves numbers of the types a device tracks, which units
+# don't specify, so Reactant numbers are moved explicitly:
+const _ConcreteNumbers = Union{Reactant.ConcretePJRTNumber,Reactant.ConcreteIFRTNumber}
+
+function Adapt.adapt_storage(cunit::ReactantUnit, x::_ConcreteNumbers)
+    get_compute_unit(x) == cunit && return x
+    dev = get_device(cunit)
+    sharding = coalesce(dev.sharding, Sharding.NoSharding())
+    return Reactant.ConcreteRNumber(Reactant.unwrapped_eltype(x)(x); client = dev.client, device = dev.device, sharding)
+end
+
+_gen_convert(::Type{T}, x::TracedRNumber{<:AbstractFloat}) where T = convert(TracedRNumber{T}, x)
+
+function allocate_array(cunit::ReactantUnit, ::Type{T}, dims::Dims) where T
+    U = Reactant.unwrapped_eltype(T)
+    if within_compile()
+        return similar(TracedRArray{U}, dims)
+    else
+        dev = get_device(cunit)
+        sharding = coalesce(dev.sharding, Sharding.NoSharding())
+        return ConcreteRArray{U}(undef, dims; client = dev.client, device = dev.device, sharding)
+    end
+end
+
+
+# Reactant compiles for the device of the arguments, or for the default
+# device of the client if the arguments don't have one:
+function HeterogeneousComputing.on_device(f, cunit::ReactantUnit, dummy_args::Vararg{Any,N}) where {N}
+    f_device, args_device = adapt(cunit, (f, dummy_args))
+    f_compiled = compile(f_device, args_device; client = get_device(cunit).client)
+    # Reactant-compiled functions are probably not thread-safe:
+    lock = ReentrantLock()
+    return _OnDevice{N}(f_compiled, cunit, lock)
+end
 
 end # module HeterogeneousComputingReactantExt
