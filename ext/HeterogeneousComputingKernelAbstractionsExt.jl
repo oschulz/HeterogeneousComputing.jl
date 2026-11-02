@@ -26,8 +26,12 @@ end
 _KA_Backend(cunit::AbstractComputeUnit) = ka_backend(cunit)::_KA_Backend
 Base.convert(::Type{_KA_Backend}, cunit::AbstractComputeUnit) = ka_backend(cunit)::_KA_Backend
 
-KernelAbstractions.GPU(cunit::AbstractGPUnit) = ka_backend(cunit)::KernelAbstractions.GPU
-Base.convert(::Type{KernelAbstractions.GPU}, cunit::AbstractGPUnit) = ka_backend(cunit)::KernelAbstractions.GPU
+# KernelAbstractions v0.10 (recognizable by its POCL backend) deprecates
+# `GPU` in favor of `Backend`:
+@static if !isdefined(KernelAbstractions, :POCLBackend)
+    KernelAbstractions.GPU(cunit::AbstractGPUnit) = ka_backend(cunit)::KernelAbstractions.GPU
+    Base.convert(::Type{KernelAbstractions.GPU}, cunit::AbstractGPUnit) = ka_backend(cunit)::KernelAbstractions.GPU
+end
 
 ka_backend(::CPUnit) = KernelAbstractions.CPU()
 KernelAbstractions.CPU(cunit::CPUnit) = ka_backend(cunit)
