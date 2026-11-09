@@ -70,11 +70,14 @@ CUDA.allowscalar(false)
     # Keyed RNGs on the unit use its default kind of RNG, their keys don't
     # depend on the placement:
     kroot = rootrng(cunit, 42)
-    @test kroot isa KeyedRNG{typeof(default_device_rng(cunit))}
+    @test kroot isa KeyedRNG
     @test get_compute_unit(kroot) === cunit
     @test rng_streamkey(kroot) == rng_streamkey(rootrng(42))
     kchild = subrng(kroot, :walker, 1)
     @test kchild isa typeof(kroot)
+    @test rand(kroot, Float32, 4) isa CuArray{Float32,1}
+    @test randn(kroot, 2, 3) isa CuArray
+    @test Array(rand(rootrng(cunit, 42), Float32, 4)) == Array(rand(rootrng(cunit, 42).rng, Float32, 4))
     @test rng_streamkey(kchild) == rng_streamkey(subrng(rootrng(42), :walker, 1))
     keyed_ctx(ids...) = GenContext{Float32}(cunit, subrng(rootrng(cunit, 42), ids...))
     @test Array(rand(keyed_ctx(1), 4)) == Array(rand(keyed_ctx(1), 4))

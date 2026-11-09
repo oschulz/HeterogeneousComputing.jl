@@ -43,6 +43,19 @@ using HeterogeneousComputing: _nonzero_xoshiro_state, _symbol_digest, _seeded_rn
         @test rootrng(rng_streamkey(c)) == c
     end
 
+    @testset "known keys" begin
+        # Keys are a contract, changing them changes the streams of all users:
+        root = rootrng(42)
+        @test rng_streamkey(root) == (0xac697d78fd20761a, 0xcc7635b29b81abe5, 0xc9de76a5e390c1a8, 0x03a15d5df6613f0c)
+        @test root.rng == Xoshiro(0xbb4e923b4a7e26ce, 0x58097ec6ba18b1b0, 0x3de0f467a54af0c9, 0xa33bf19081e086fb)
+        @test rng_streamkey(subrng(root, 1)) ==
+              (0xf591514413373605, 0x36f3c6fe747eefa2, 0x2770aa19bdcba1d1, 0x83007b2892e4ca60)
+        @test rng_streamkey(subrng(root, :a)) ==
+              (0x7a55c74d393805c9, 0x41c322a58d2151c9, 0xb9d91c36f78ec3d3, 0x2bc9b8d77a192f8f)
+        @test rng_streamkey(subrng(root, :walker, 3)) ==
+              (0x40ebafad5cdfc42d, 0xa7493c0870665eb4, 0x8e39820b01635f40, 0x966249dd0b71307c)
+    end
+
     @testset "ids" begin
         r = rootrng(42)
         @test subrng(r, 1) == subrng(r, UInt8(1)) == subrng(r, Int128(1))
@@ -104,6 +117,23 @@ using HeterogeneousComputing: _nonzero_xoshiro_state, _symbol_digest, _seeded_rn
         end
         @test rand!(copy(r), zeros(Int, 5), 1:5) == rand!(copy(leaf), zeros(Int, 5), 1:5)
         @test rand!(copy(r), zeros(3), Float32) == rand!(copy(leaf), zeros(3), Float32)
+
+        # Fills of views and other dense host arrays match the wrapped RNG,
+        # including the state afterwards:
+        function fills_alike(f!, make)
+            a, b = copy(r), copy(leaf)
+            return f!(a, make()) == f!(b, make()) && a.rng == b
+        end
+        @test fills_alike(rand!, () -> view(zeros(100), 1:60))
+        @test fills_alike(rand!, () -> view(zeros(100), 1:2:99))
+        @test fills_alike(rand!, () -> view(zeros(UInt8, 100), 1:60))
+        @test fills_alike(randn!, () -> view(zeros(Float32, 100), 1:60))
+        @test fills_alike(randexp!, () -> view(zeros(100), 1:60))
+        @test fills_alike((rng, A) -> rand!(rng, A, UInt16), () -> view(zeros(UInt16, 100), 1:60))
+        @test fills_alike(rand!, () -> BitVector(undef, 70))
+        @static if isdefined(Base, :Memory)
+            @test fills_alike(rand!, () -> Memory{Float64}(undef, 60))
+        end
 
         # Drawing advances the wrapped RNG, reseeding keeps the key:
         a = copy(r)
@@ -173,6 +203,22 @@ using HeterogeneousComputing: _nonzero_xoshiro_state, _symbol_digest, _seeded_rn
         jl_root = rootrng(jl_unit, 42)
         @test jl_root isa KeyedRNG{<:GPUArrays.RNG{JLArray}}
         @test rng_streamkey(jl_root) == rng_streamkey(rootrng(42))
+        @test rng_streamkey(adapt(jl_unit, rootrng(42))) == rng_streamkey(rootrng(42))
+
+        # Draws that allocate stay on the unit, like with the wrapped RNG:
+        @test rand(jl_root, Float32, 5) isa JLArray{Float32,1}
+        @test size(rand(jl_root, 2, 3)) == (2, 3) && rand(jl_root, 2, 3) isa JLArray
+        @test randn(jl_root, 4) isa JLArray
+        @test Array(rand(rootrng(jl_unit, 42), Float32, 5)) == Array(rand(rootrng(jl_unit, 42).rng, Float32, 5))
+        @test Array(randn(rootrng(jl_unit, 42), Float32, (2, 2))) ==
+              Array(randn(rootrng(jl_unit, 42).rng, Float32, (2, 2)))
+
+        # A root created from a key restarts the stream of that key on the
+        # unit, not a stream that adapt derived from draws:
+        restored = rootcontext(jl_unit, rng_streamkey(get_rng(jl_ctx)))
+        @test rng_streamkey(get_rng(restored)) == rng_streamkey(get_rng(jl_ctx))
+        @test Array(rand(restored, 3)) == Array(rand(rootcontext(jl_unit, 42), 3))
+        @test Array(rand(restored, 3)) != Array(rand(adapt(jl_unit, rootcontext(42)), 3))
         @test rootrng(jl_root) isa KeyedRNG{<:GPUArrays.RNG{JLArray}}
         @test rootrng(jl_unit, jl_root.rng) isa KeyedRNG{<:GPUArrays.RNG{JLArray}}
         @test Array(rand(rootcontext(jl_unit, 42), 5)) == Array(rand(rootcontext(jl_unit, 42), 5))

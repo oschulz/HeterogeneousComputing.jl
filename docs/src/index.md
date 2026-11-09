@@ -68,7 +68,7 @@ randn(proposal, 5)
 
 The key of `proposal` depends only on the seed and on the ids along the way, so the same numbers come out no matter how many values were drawn from `root` or `chain` before, in which order siblings were derived, or on which thread. The same ids always yield the same stream, so algorithms that run repeatedly need an id, like a step number, that tells the runs apart.
 
-Keyed RNGs are ordinary `AbstractRNG`s and work wherever an RNG is accepted. They wrap an RNG of the kind the compute unit uses for drawing numbers, so children derived on a GPU draw with the GPU's generator. [`rootcontext`](@ref) and [`subcontext`](@ref) do the same for a `GenContext`, and `adapt` keeps the key when a context moves to another compute unit:
+Keyed RNGs are ordinary `AbstractRNG`s and work wherever an RNG is accepted. They wrap an RNG of the kind the compute unit uses for drawing numbers, so children derived on a GPU draw with the GPU's generator. The state of that generator is derived from the key, but holds fewer bits than the key on GPUs: 64 bits for the GPUArrays generator, 128 bits for Reactant. Streams of distinct keys are distinct with certainty on the CPU and with overwhelming probability on GPUs. [`rootcontext`](@ref) and [`subcontext`](@ref) do the same for a `GenContext`, and `adapt` keeps the key when a context moves to another compute unit:
 
 ```julia
 ctx = rootcontext(gpu_unit, 42)
@@ -76,7 +76,7 @@ step_ctx = subcontext(ctx, :proposal, step)
 randn(step_ctx, (n, k))
 ```
 
-On Reactant, keyed RNGs and contexts are created on the host. [`on_device`](@ref) runs compiled code with the wrapped RNGs and keeps the keys on the host. Reactant's `@compile` doesn't trace keyed RNGs, so code compiled that way has to take the wrapped RNG, `get_rng(ctx).rng`, instead.
+On Reactant, keyed RNGs and contexts are created on the host and passed to compiled code as arguments of [`on_device`](@ref), which hands the wrapped RNGs to the compiled code and keeps the keys on the host. Reactant's `@compile` doesn't trace keyed RNGs, so code compiled that way has to take the wrapped RNG, `get_rng(ctx).rng`, instead. A context with a keyed RNG raises an error in such code. A keyed RNG used directly with Random functions there is treated by Reactant like any other non-Reactant RNG: Reactant seeds a traced generator from it once, when compiling.
 
 # Reactant
 

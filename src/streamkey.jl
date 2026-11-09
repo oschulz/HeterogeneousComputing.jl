@@ -24,10 +24,10 @@ has_rng_streamkey(::AbstractRNG) = false
 
 The stream key of a keyed RNG, see [`has_rng_streamkey`](@ref).
 
-The key identifies the random stream of `rng`: an RNG of the same kind
-created from the same key starts the same stream, and the key of an RNG
-derived with [`subrng`](@ref) depends only on the key of its root and on the
-ids along the way. Throws an `ArgumentError` for RNGs without a key.
+The key identifies the random stream of `rng`: [`rootrng`](@ref) creates the
+same stream from the same key, and the key of an RNG derived with
+[`subrng`](@ref) depends only on the key of its root and on the ids along the
+way. Throws an `ArgumentError` for RNGs without a key.
 """
 function rng_streamkey end
 export rng_streamkey
@@ -74,13 +74,18 @@ derived with [`subrng`](@ref).
 
 The stream key of the root is derived from the integer `seed` (in
 `0:typemax(UInt64)`), drawn from the RNG `entropy`, which advances, or drawn
-from the default RNG of `cunit` if neither is given. A root created from a
-key, typically the [`rng_streamkey`](@ref) of another keyed RNG, restarts the
-stream of that RNG. `cunit` defaults to `CPUnit()`, or to the compute unit of
-`entropy`.
+from the default RNG of `cunit` if neither is given. `cunit` defaults to
+`CPUnit()`, or to the compute unit of `entropy`.
 
-The root generates numbers with the default kind of RNG of `cunit`, with a
-state derived from the key. See [`KeyedRNG`](@ref).
+A root created from a key, typically the [`rng_streamkey`](@ref) of another
+keyed RNG, restarts the stream that `rootrng` or [`subrng`](@ref) created for
+that key on `cunit`. It doesn't resume a stream that has advanced, and it
+doesn't recreate generators that `adapt` moved to another compute unit or
+that were reseeded with `Random.seed!`, their state no longer follows from the
+key.
+
+The root generates numbers with the kind of RNG that `cunit` uses for derived
+generators, with a state derived from the key. See [`KeyedRNG`](@ref).
 """
 function rootrng end
 export rootrng
@@ -104,6 +109,19 @@ export KeyedRNG
 has_rng_streamkey(::KeyedRNG) = true
 rng_streamkey(rng::KeyedRNG) = rng.streamkey
 
+# Backends that compile code (Reactant) can't trace keyed RNGs, their
+# extensions throw within compiled code:
+struct _KeyedDraw end
+struct _KeyedCreate end
+_assert_not_compiling(@nospecialize(x)) = nothing
+
+# The RNG that draws for a keyed RNG. Extensions can reject wrapped RNGs
+# that can't draw in the current situation:
+_draw_rng(rng::KeyedRNG) = rng.rng
+
+# Moving a keyed RNG moves the wrapped RNG, the key stays:
+Adapt.adapt_structure(to, rng::KeyedRNG) = KeyedRNG(adapt(to, rng.rng), rng.streamkey)
+
 Base.copy(rng::KeyedRNG) = KeyedRNG(copy(rng.rng), rng.streamkey)
 Base.:(==)(a::KeyedRNG, b::KeyedRNG) = a.streamkey == b.streamkey && a.rng == b.rng
 Base.hash(rng::KeyedRNG, h::UInt) = hash(rng.rng, hash(rng.streamkey, hash(:KeyedRNG, h)))
@@ -112,24 +130,67 @@ function Base.show(io::IO, rng::KeyedRNG)
     return print(io, "KeyedRNG(", rng.rng, ", streamkey = ", rng.streamkey, ")")
 end
 
-# Fills of plain and GPU arrays go to the wrapped RNG as a whole, so its own
-# kernels are used. Random fills other arrays element by element, through the
-# scalar draws forwarded below. (Forwarding fills of all arrays would be
-# ambiguous with packages that fill their arrays from any RNG.)
-Random.rand!(rng::KeyedRNG, A::Array) = Random.rand!(rng.rng, A)
-Random.rand!(rng::KeyedRNG, A::Array, X) = Random.rand!(rng.rng, A, X)
-Random.rand!(rng::KeyedRNG, A::Array, ::Type{X}) where {X} = Random.rand!(rng.rng, A, X)
-Random.rand!(rng::KeyedRNG, A::Array, sp::Random.Sampler) = Random.rand!(rng.rng, A, sp)
-Random.randn!(rng::KeyedRNG, A::Array) = Random.randn!(rng.rng, A)
-Random.randexp!(rng::KeyedRNG, A::Array) = Random.randexp!(rng.rng, A)
-Random.rand!(rng::KeyedRNG, A::GPUArraysCore.AnyGPUArray) = Random.rand!(rng.rng, A)
+# Fills of dense host arrays (which Xoshiro fills in bulk) and of GPU arrays
+# go to the wrapped RNG as a whole, so its own methods and kernels are used.
+# Other arrays are filled element by element by Random, through the scalar
+# draws forwarded below. Forwarding fills of all arrays would be ambiguous with
+# packages that fill their arrays from any RNG.
+@static if isdefined(Base, :Memory)
+    const _DenseHostArray = Union{Array,Memory,SubArray{<:Any,<:Any,<:Union{Array,Memory},<:Any,true}}
+else
+    const _DenseHostArray = Union{Array,SubArray{<:Any,<:Any,<:Array,<:Any,true}}
+end
+
+for f! in (:rand!, :randn!, :randexp!)
+    @eval function Random.$f!(rng::KeyedRNG, A::_DenseHostArray)
+        _assert_not_compiling(_KeyedDraw())
+        return Random.$f!(_draw_rng(rng), A)
+    end
+end
+function Random.rand!(rng::KeyedRNG, A::_DenseHostArray, ::Type{X}) where {X}
+    _assert_not_compiling(_KeyedDraw())
+    return Random.rand!(_draw_rng(rng), A, X)
+end
+
+function Random.rand!(rng::KeyedRNG, A::GPUArraysCore.AnyGPUArray)
+    _assert_not_compiling(_KeyedDraw())
+    return Random.rand!(_draw_rng(rng), A)
+end
 function Random.randn!(
     rng::KeyedRNG,
     A::GPUArraysCore.AnyGPUArray{T}
 ) where {T<:Union{AbstractFloat,Complex{<:AbstractFloat}}}
-    return Random.randn!(rng.rng, A)
+    _assert_not_compiling(_KeyedDraw())
+    return Random.randn!(_draw_rng(rng), A)
 end
-Random.randexp!(rng::KeyedRNG, A::GPUArraysCore.AnyGPUArray) = Random.randexp!(rng.rng, A)
+function Random.randexp!(rng::KeyedRNG, A::GPUArraysCore.AnyGPUArray)
+    _assert_not_compiling(_KeyedDraw())
+    return Random.randexp!(_draw_rng(rng), A)
+end
+
+# Draws of numbers that allocate their result go to the wrapped RNG as well,
+# so GPU RNGs allocate on their device. (Packages define such draws of their
+# own array types for any RNG, so the element type is restricted to numbers.)
+for f in (:rand, :randn, :randexp)
+    @eval begin
+        function Random.$f(rng::KeyedRNG, dims::Dims)
+            _assert_not_compiling(_KeyedDraw())
+            return Random.$f(_draw_rng(rng), dims)
+        end
+        function Random.$f(rng::KeyedRNG, d::Integer, dims::Integer...)
+            _assert_not_compiling(_KeyedDraw())
+            return Random.$f(_draw_rng(rng), d, dims...)
+        end
+        function Random.$f(rng::KeyedRNG, ::Type{X}, dims::Dims) where {X<:Number}
+            _assert_not_compiling(_KeyedDraw())
+            return Random.$f(_draw_rng(rng), X, dims)
+        end
+        function Random.$f(rng::KeyedRNG, ::Type{X}, d::Integer, dims::Integer...) where {X<:Number}
+            _assert_not_compiling(_KeyedDraw())
+            return Random.$f(_draw_rng(rng), X, d, dims...)
+        end
+    end
+end
 
 # Scalar draws forward the samplers that Xoshiro implements natively, Random's
 # generic algorithms build the rest on top of them:
@@ -138,20 +199,30 @@ Random.seed!(rng::KeyedRNG) = (Random.seed!(rng.rng); rng)
 Random.seed!(rng::KeyedRNG, seed) = (Random.seed!(rng.rng, seed); rng)
 
 for T in (Bool, Int8, UInt8, Int16, UInt16, Int32, UInt32, Int64, UInt64, Int128, UInt128)
-    @eval Random.rand(rng::KeyedRNG, sp::Random.SamplerType{$T}) = Random.rand(rng.rng, sp)
+    @eval function Random.rand(rng::KeyedRNG, sp::Random.SamplerType{$T})
+        _assert_not_compiling(_KeyedDraw())
+        return Random.rand(_draw_rng(rng), sp)
+    end
 end
 for S in (
     Random.UInt52Raw{UInt64}, Random.UInt52{UInt64}, Random.UInt104{UInt128},
     Random.CloseOpen01{Float16}, Random.CloseOpen01{Float32}, Random.CloseOpen01{Float64}
 )
-    @eval Random.rand(rng::KeyedRNG, sp::Random.SamplerTrivial{$S}) = Random.rand(rng.rng, sp)
+    @eval function Random.rand(rng::KeyedRNG, sp::Random.SamplerTrivial{$S})
+        _assert_not_compiling(_KeyedDraw())
+        return Random.rand(_draw_rng(rng), sp)
+    end
 end
 
 get_compute_unit_impl(rng::KeyedRNG) = get_compute_unit(rng.rng)
 
-_fill_random!(f!::F, rng::KeyedRNG, A::AbstractArray) where {F} = _fill_random!(f!, rng.rng, A)
+function _fill_random!(f!::F, rng::KeyedRNG, A::AbstractArray) where {F}
+    _assert_not_compiling(_KeyedDraw())
+    return _fill_random!(f!, _draw_rng(rng), A)
+end
 function _draw_scalar(f!::F, rng::KeyedRNG, ::Type{T}, cunit::AbstractComputeUnit) where {F,T}
-    return _draw_scalar(f!, rng.rng, T, cunit)
+    _assert_not_compiling(_KeyedDraw())
+    return _draw_scalar(f!, _draw_rng(rng), T, cunit)
 end
 _draw_seeds(rng::KeyedRNG, home::AbstractComputeUnit) = _draw_seeds(rng.rng, home)
 
@@ -225,13 +296,17 @@ _leaf_seeds(key::NTuple{4,UInt64}) = _derive_streamkey(key, (_STREAMKEY_LEAF, UI
 
 
 function subrng(rng::KeyedRNG, id, ids...)
+    _assert_not_compiling(_KeyedCreate())
     key = _path_streamkey(rng.streamkey, id, ids...)
     home = _rng_home(get_compute_unit(rng.rng), CPUnit())
     leaf = _within_unit(() -> _seeded_rng_like(rng.rng, home, _leaf_seeds(key)), home)
     return KeyedRNG(leaf, key)
 end
 
-rootrng(cunit::AbstractComputeUnit, key::NTuple{4,UInt64}) = KeyedRNG(_seeded_rng(cunit, _leaf_seeds(key)), key)
+function rootrng(cunit::AbstractComputeUnit, key::NTuple{4,UInt64})
+    _assert_not_compiling(_KeyedCreate())
+    return KeyedRNG(_seeded_rng(cunit, _leaf_seeds(key)), key)
+end
 rootrng(cunit::AbstractComputeUnit, seed::Integer) = rootrng(cunit, _seed_streamkey(seed))
 function rootrng(cunit::AbstractComputeUnit, entropy::AbstractRNG)
     return rootrng(cunit, _draw_seeds(entropy, _rng_home(get_compute_unit(entropy), cunit)))

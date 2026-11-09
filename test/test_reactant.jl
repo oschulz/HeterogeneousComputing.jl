@@ -163,12 +163,29 @@ Reactant.set_default_backend(get(ENV, "HETEROGENEOUSCOMPUTING_REACTANT_BACKEND",
         @test !has_rng_streamkey(passed[2])
         @test has_rng_streamkey(get_rng(child))
 
-        # Reactant doesn't trace keyed RNGs itself:
+        # Bare keyed RNGs work as on_device arguments too, and the same
+        # compiled function draws different numbers for different keys:
+        krng = get_rng(child)
+        draw_on_device = on_device(r -> rand(r, Float32, 3), cunit, krng)
+        d1, d2 = draw_on_device(krng), draw_on_device(krng)
+        @test d1 isa Reactant.ConcreteRArray{Float32,1} && Array(d1) != Array(d2)
+        @test has_rng_streamkey(krng)
+        @test Array(h_on_device(child, x)) != Array(h_on_device(subcontext(kctx, :chain, 2), x))
+
+        # Reactant doesn't trace keyed RNGs itself. Contexts with keyed RNGs
+        # fail in compiled code instead of becoming constants, and so do direct
+        # Random calls on keyed Reactant RNGs. (Reactant treats direct Random
+        # calls on other keyed RNGs like on any foreign RNG, seeding a traced
+        # RNG from them once when compiling.)
         @test_throws ArgumentError @compile h(child, x)
-        @test (@jit h(GenContext{Float32}(cunit, get_rng(child).rng), x)) isa Reactant.ConcreteRArray{Float32,1}
+        @test_throws ArgumentError @compile ((r, x) -> x .+ rand(r, Float32, size(x)))(krng, x)
+        @test_throws ArgumentError rand(krng, Float32, 3)
+        @test (@jit h(GenContext{Float32}(cunit, krng.rng), x)) isa Reactant.ConcreteRArray{Float32,1}
         # Keyed RNGs can't be created or derived within compiled code:
         @test_throws ArgumentError @jit(((ctx, x) -> randn(subcontext(ctx, 1), size(x)))(child, x))
         @test_throws ArgumentError @jit((x -> randn(GenContext{Float32}(cunit, rootrng(cunit, 1)), size(x)))(x))
+        @test_throws ArgumentError @jit((x -> x .+ rand(rootrng(42), Float32, size(x)))(x))
+        @test_throws ArgumentError @jit((x -> x .+ rand(subrng(rootrng(42), 1), Float32, size(x)))(x))
 
         # Moving keyed contexts between units keeps their keys:
         on_host = adapt(CPUnit(), child)

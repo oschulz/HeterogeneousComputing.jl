@@ -8,6 +8,7 @@ import HeterogeneousComputing: get_compute_unit_impl, get_precision_fromtype, al
 import HeterogeneousComputing:
     _canonical_device, _same_device, _fill_random!, _draw_scalar, _scalar_randfun, _RecurseFields, _gen_convert
 import HeterogeneousComputing: _draw_seeds, _seeded_rng, _seeded_rng_like, _device_args, _strip_streamkeys
+import HeterogeneousComputing: _assert_not_compiling, _KeyedDraw, _KeyedCreate, _draw_rng
 
 import Reactant
 using Reactant: ConcreteRArray, TracedRArray, TracedRNumber, ReactantRNG, within_compile
@@ -137,21 +138,32 @@ _fill_random!(::F, ::_ConcreteRNG, ::AbstractArray) where {F} = _no_eager_draws(
 _draw_scalar(::F, ::_ConcreteRNG, ::Type{T}, ::AbstractComputeUnit) where {F,T} = _no_eager_draws()
 
 # Reactant doesn't trace into RNGs other than its own, so a keyed RNG passed
-# directly into compiled code still wraps a concrete RNG there:
-function _keyed_rng_not_traced()
+# directly into compiled code would become a constant there. Compiled code
+# only works with the wrapped RNGs, which on_device passes on:
+function _assert_not_compiling(::_KeyedDraw)
+    within_compile() && throw(
+        ArgumentError(
+            "Keyed RNGs aren't traced by Reactant, pass them to compiled code as arguments of on_device or pass their wrapped RNG"
+        )
+    )
+    return nothing
+end
+function _assert_not_compiling(::_KeyedCreate)
+    within_compile() && throw(ArgumentError("Keyed RNGs can't be created or derived within compiled code"))
+    return nothing
+end
+
+# Reactant seeds a traced RNG from foreign RNGs, keyed ones included, by
+# drawing from them natively when compiling. A wrapped concrete Reactant RNG
+# can't serve that purpose, nor draw eagerly:
+function _draw_rng(::KeyedRNG{<:_ConcreteRNG})
     return throw(
         ArgumentError(
-            "Keyed RNGs aren't traced by Reactant, run compiled code with on_device or pass the wrapped RNG instead"
+            "Random numbers from Reactant random number generators can only be drawn within compiled code, pass keyed RNGs to compiled code as arguments of on_device"
         )
     )
 end
 
-function _fill_random!(::F, ::KeyedRNG{<:_ConcreteRNG}, ::AbstractArray) where {F}
-    return within_compile() ? _keyed_rng_not_traced() : _no_eager_draws()
-end
-function _draw_scalar(::F, ::KeyedRNG{<:_ConcreteRNG}, ::Type{T}, ::AbstractComputeUnit) where {F,T}
-    return within_compile() ? _keyed_rng_not_traced() : _no_eager_draws()
-end
 # Reactant supports scalar draws within compiled code:
 function _draw_scalar(f!::F, rng::ReactantRNG{<:TracedRArray}, ::Type{T}, ::AbstractComputeUnit) where {F,T}
     return _scalar_randfun(f!)(rng, T)
@@ -184,13 +196,13 @@ function allocate_array(cunit::ReactantUnit, ::Type{T}, dims::Dims) where T
 end
 
 
-# Stream keys stay on the host, compiled code only sees the RNGs:
+# Stream keys stay on the host, compiled code only sees the wrapped RNGs:
 _device_args(::ReactantUnit, args::Tuple) = _strip_streamkeys(args)
 
 # Reactant compiles for the device of the arguments, or for the default
 # device of the client if the arguments don't have one:
 function HeterogeneousComputing.on_device(f, cunit::ReactantUnit, dummy_args::Vararg{Any,N}) where {N}
-    f_device, args_device = _strip_streamkeys(adapt(cunit, (f, dummy_args)))
+    f_device, args_device = adapt(cunit, _strip_streamkeys((f, dummy_args)))
     f_compiled = compile(f_device, args_device; client = get_device(cunit).client)
     # Reactant-compiled functions are probably not thread-safe:
     lock = ReentrantLock()
