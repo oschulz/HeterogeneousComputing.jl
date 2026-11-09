@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   test:
-    name: Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }} - ${{ github.event_name }}
+    name: Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }}${{ matrix.kernelabstractions && format(' - KernelAbstractions {0}', matrix.kernelabstractions) || '' }} - ${{ github.event_name }}
     runs-on: ${{ matrix.os }}
     continue-on-error: ${{ matrix.version == 'nightly' }}
     strategy:
@@ -43,6 +43,12 @@ jobs:
           - version: 1
             os: windows-latest
             arch: x64
+          # The resolver picks the newest KernelAbstractions, so pin the
+          # previous minor in one job to keep testing its code paths:
+          - version: 1
+            os: ubuntu-latest
+            arch: x64
+            kernelabstractions: '0.9'
     steps:
       - uses: actions/checkout@v7
       - uses: julia-actions/setup-julia@v3
@@ -51,6 +57,11 @@ jobs:
           arch: ${{ matrix.arch }}
       - uses: julia-actions/cache@v3
       - uses: julia-actions/julia-buildpkg@v1
+      - name: Pin KernelAbstractions ${{ matrix.kernelabstractions }} for the tests
+        if: matrix.kernelabstractions
+        run: julia --project=test -e 'using Pkg; Pkg.compat("KernelAbstractions", ENV["KA_VERSION"])'
+        env:
+          KA_VERSION: ${{ matrix.kernelabstractions }}
       - uses: julia-actions/julia-runtest@v1
         with:
           coverage: ${{ matrix.version == '1' && matrix.os == 'ubuntu-latest' && matrix.arch == 'x64' }}
