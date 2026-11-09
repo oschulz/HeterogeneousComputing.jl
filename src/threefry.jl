@@ -7,8 +7,8 @@
 
 const _THREEFRY_PARITY = 0x1bd11bdaa9fc1a22
 
-# Rotation constants of Threefry-4x64, two per round. Rounds cycle through
-# them with period 8, so four consecutive rounds use either half:
+# Rotation constants of Threefry-4x64, two per round. They repeat every eight
+# rounds, so each block of four rounds uses one half:
 const _THREEFRY_ROTATIONS_A = ((14, 16), (52, 57), (23, 40), (5, 37))
 const _THREEFRY_ROTATIONS_B = ((25, 33), (46, 12), (58, 22), (32, 32))
 

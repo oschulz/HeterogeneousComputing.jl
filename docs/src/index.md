@@ -52,7 +52,7 @@ Moving data to a compute unit via `adapt` never changes its numerical precision,
 
 # Reproducible random streams
 
-Random numbers drawn from an ordinary RNG depend on everything drawn from it before. That makes results hard to reproduce when parts of a computation run in parallel, or when an inner algorithm consumes an unknown number of random values. Keyed RNGs solve this: they identify their random stream by a 256-bit stream key that drawing never changes, and child streams are derived from the key and an id rather than from the state.
+Random numbers drawn from an ordinary RNG depend on everything drawn from it before. That makes results hard to reproduce when parts of a computation run in parallel, or when an inner algorithm consumes an unknown number of random values. Keyed RNGs avoid this: they identify their random stream by a 256-bit stream key that drawing never changes, and child streams are derived from the key and an id rather than from the state.
 
 [`rootrng`](@ref) creates a keyed RNG from a seed (or from an entropy source), [`subrng`](@ref) derives children from it:
 
@@ -68,7 +68,9 @@ randn(proposal, 5)
 
 The key of `proposal` depends only on the seed and on the ids along the way, so the same numbers come out no matter how many values were drawn from `root` or `chain` before, in which order siblings were derived, or on which thread. The same ids always yield the same stream, so algorithms that run repeatedly need an id, like a step number, that tells the runs apart.
 
-Keyed RNGs are ordinary `AbstractRNG`s and work wherever an RNG is accepted. They wrap an RNG of the kind the compute unit uses for drawing numbers, so children derived on a GPU draw with the GPU's generator. The state of that generator is derived from the key, but holds fewer bits than the key on GPUs: 64 bits for the GPUArrays generator, 128 bits for Reactant. Streams of distinct keys are distinct with certainty on the CPU and with overwhelming probability on GPUs. [`rootcontext`](@ref) and [`subcontext`](@ref) do the same for a `GenContext`, and `adapt` keeps the key when a context moves to another compute unit:
+Keyed RNGs are ordinary `AbstractRNG`s and work wherever an RNG is accepted. They wrap an RNG of the kind the compute unit uses for drawing numbers, so children derived on a GPU draw with the GPU's generator. The state of that generator is derived from the key, but on GPUs holds fewer bits than the key: 64 for the GPUArrays generator, 128 for Reactant. The streams of two distinct keys coincide with negligible probability, about 2^-256 on the CPU, 2^-64 and 2^-128 on those GPUs.
+
+[`rootcontext`](@ref) and [`subcontext`](@ref) do the same for a `GenContext`, and `adapt` keeps the key when a context moves to another compute unit:
 
 ```julia
 ctx = rootcontext(gpu_unit, 42)
@@ -76,7 +78,7 @@ step_ctx = subcontext(ctx, :proposal, step)
 randn(step_ctx, (n, k))
 ```
 
-On Reactant, keyed RNGs and contexts are created on the host and passed to compiled code as arguments of [`on_device`](@ref), which hands the wrapped RNGs to the compiled code and keeps the keys on the host. Reactant's `@compile` doesn't trace keyed RNGs, so code compiled that way has to take the wrapped RNG, `get_rng(ctx).rng`, instead. A context with a keyed RNG raises an error in such code. A keyed RNG used directly with Random functions there is treated by Reactant like any other non-Reactant RNG: Reactant seeds a traced generator from it once, when compiling.
+On Reactant, keyed RNGs and contexts are created on the host and passed to compiled code as arguments of [`on_device`](@ref), which hands the wrapped RNGs to the compiled code and keeps the keys on the host. Reactant's own `@compile` doesn't trace keyed RNGs: a context with a keyed RNG raises an error there, and a keyed RNG used directly with `Random` functions is treated like any other non-Reactant RNG, which Reactant seeds a traced generator from once, when compiling. Code compiled with `@compile` therefore has to take the wrapped RNG, `get_rng(ctx).rng`, instead.
 
 # Reactant
 

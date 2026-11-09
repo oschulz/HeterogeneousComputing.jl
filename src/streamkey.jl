@@ -7,9 +7,9 @@
 Whether `rng` carries a stream key.
 
 A keyed RNG identifies its random stream by a 256-bit key that drawing numbers
-never changes, so child streams can be derived from it with [`subrng`](@ref)
-in a reproducible way. Ordinary RNGs carry no key, [`rootrng`](@ref) creates
-keyed ones.
+never changes, so [`subrng`](@ref) can derive child streams from it
+reproducibly. Ordinary RNGs carry no key, [`rootrng`](@ref) creates keyed
+ones.
 
 See also [`rng_streamkey`](@ref).
 """
@@ -49,7 +49,7 @@ from `rng` before, and deriving a child doesn't advance `rng`. Several ids
 derive step by step, so `subrng(rng, :walker, 3)` equals
 `subrng(subrng(rng, :walker), 3)`. The same ids always yield the same child,
 so an algorithm that runs repeatedly has to include something like a step
-number in the ids if the runs shall differ.
+number in the ids if its runs are to differ.
 
 The child uses the same kind of random number generator as `rng`, with a
 fresh state derived from its key. Throws an `ArgumentError` if `rng` has no
@@ -80,12 +80,12 @@ from the default RNG of `cunit` if neither is given. `cunit` defaults to
 A root created from a key, typically the [`rng_streamkey`](@ref) of another
 keyed RNG, restarts the stream that `rootrng` or [`subrng`](@ref) created for
 that key on `cunit`. It doesn't resume a stream that has advanced, and it
-doesn't recreate generators that `adapt` moved to another compute unit or
-that were reseeded with `Random.seed!`, their state no longer follows from the
-key.
+doesn't recreate the generator of an RNG that `adapt` moved to another
+compute unit or that `Random.seed!` reseeded, since their state no longer
+follows from the key.
 
-The root generates numbers with the kind of RNG that `cunit` uses for derived
-generators, with a state derived from the key. See [`KeyedRNG`](@ref).
+The root draws with the kind of RNG that `cunit` uses for derived generators,
+in a state derived from the key. See [`KeyedRNG`](@ref).
 """
 function rootrng end
 export rootrng
@@ -109,14 +109,14 @@ export KeyedRNG
 has_rng_streamkey(::KeyedRNG) = true
 rng_streamkey(rng::KeyedRNG) = rng.streamkey
 
-# Backends that compile code (Reactant) can't trace keyed RNGs, their
-# extensions throw within compiled code:
+# Backends that compile code (Reactant) can't trace keyed RNGs. Their
+# extensions make these hooks throw within compiled code:
 struct _KeyedDraw end
 struct _KeyedCreate end
 _assert_not_compiling(@nospecialize(x)) = nothing
 
-# The RNG that draws for a keyed RNG. Extensions can reject wrapped RNGs
-# that can't draw in the current situation:
+# The RNG that draws for a keyed RNG. Extensions reject wrapped RNGs that
+# can't draw where they are used:
 _draw_rng(rng::KeyedRNG) = rng.rng
 
 # Moving a keyed RNG moves the wrapped RNG, the key stays:
@@ -132,9 +132,9 @@ end
 
 # Fills of dense host arrays (which Xoshiro fills in bulk) and of GPU arrays
 # go to the wrapped RNG as a whole, so its own methods and kernels are used.
-# Other arrays are filled element by element by Random, through the scalar
-# draws forwarded below. Forwarding fills of all arrays would be ambiguous with
-# packages that fill their arrays from any RNG.
+# Random fills other arrays element by element, through the scalar draws
+# forwarded below. Forwarding fills of all arrays would be ambiguous with
+# packages that fill their own array types from any RNG.
 @static if isdefined(Base, :Memory)
     const _DenseHostArray = Union{Array,Memory,SubArray{<:Any,<:Any,<:Union{Array,Memory},<:Any,true}}
 else
@@ -168,9 +168,9 @@ function Random.randexp!(rng::KeyedRNG, A::GPUArraysCore.AnyGPUArray)
     return Random.randexp!(_draw_rng(rng), A)
 end
 
-# Draws of numbers that allocate their result go to the wrapped RNG as well,
-# so GPU RNGs allocate on their device. (Packages define such draws of their
-# own array types for any RNG, so the element type is restricted to numbers.)
+# Allocating draws of numbers go to the wrapped RNG as well, so GPU RNGs
+# allocate on their device. They are limited to number types because packages
+# define such draws of their own array types for any RNG.
 for f in (:rand, :randn, :randexp)
     @eval begin
         function Random.$f(rng::KeyedRNG, dims::Dims)
@@ -226,11 +226,11 @@ function _draw_scalar(f!::F, rng::KeyedRNG, ::Type{T}, cunit::AbstractComputeUni
 end
 _draw_seeds(rng::KeyedRNG, home::AbstractComputeUnit) = _draw_seeds(rng.rng, home)
 
-# A re-derived leaf keeps the key of the RNG it replaces:
+# An RNG derived to replace a keyed one keeps its key:
 _keep_streamkey(::AbstractRNG, rng::AbstractRNG) = rng
 _keep_streamkey(keyed::KeyedRNG, rng::AbstractRNG) = KeyedRNG(rng, keyed.streamkey)
 
-# Code compiled for a device gets bare leaves, a key frozen into a compiled
+# Compiled code works with the wrapped RNGs. A key frozen into a compiled
 # function would come back with results computed for other keys:
 _strip_streamkeys(@nospecialize(x)) = x
 _strip_streamkeys(rng::KeyedRNG) = rng.rng
@@ -241,8 +241,8 @@ _strip_streamkeys(x::NamedTuple) = map(_strip_streamkeys, x)
 
 # Key derivation. Threefry-4x64 serves as a pseudorandom function from a key
 # and a 256-bit counter block to a new key. The first counter word names the
-# domain of the remaining three, so integer ids, symbol ids, leaf states and
-# seeds can't collide with each other. For a fixed parent key, distinct
+# domain of the remaining three, so integer ids, symbol ids, generator states
+# and seeds can't collide with each other. For a fixed parent key, distinct
 # counter blocks give distinct keys:
 const _STREAMKEY_INT_ID = UInt64(1)
 const _STREAMKEY_SYMBOL_ID = UInt64(2)
@@ -291,7 +291,7 @@ function _seed_streamkey(seed::Integer)
     return _derive_streamkey(_STREAMKEY_SEED_KEY, (_STREAMKEY_SEED, _checked_streamid(seed), UInt64(0), UInt64(0)))
 end
 
-# The state of the RNG that generates the numbers of a keyed RNG:
+# The state of the wrapped RNG of a keyed RNG with this key:
 _leaf_seeds(key::NTuple{4,UInt64}) = _derive_streamkey(key, (_STREAMKEY_LEAF, UInt64(0), UInt64(0), UInt64(0)))
 
 

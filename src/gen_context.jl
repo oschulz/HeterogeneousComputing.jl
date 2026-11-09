@@ -45,7 +45,7 @@ should reside on the compute unit of `ctx`) with random numbers.
 `adapt(cunit, ctx)` moves a context to the compute unit `cunit`. The random
 number generator stays if it is native to `cunit`, otherwise a new generator
 native to `cunit` is created, seeded with random numbers drawn from the old
-one. A stream key of the generator (see [`rng_streamkey`](@ref)) is kept.
+one. A stream key of the generator (see [`rng_streamkey`](@ref)) stays.
 
 [`rootcontext`](@ref) creates contexts with keyed RNGs, [`subcontext`](@ref)
 derives child contexts from them.
