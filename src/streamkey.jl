@@ -112,16 +112,6 @@ export KeyedRNG
 has_rng_streamkey(::KeyedRNG) = true
 rng_streamkey(rng::KeyedRNG) = rng.streamkey
 
-# Backends that compile code (Reactant) can't trace keyed RNGs. Their
-# extensions make these hooks throw within compiled code:
-struct _KeyedDraw end
-struct _KeyedCreate end
-_assert_not_compiling(@nospecialize(x)) = nothing
-
-# The RNG that draws for a keyed RNG. Extensions reject wrapped RNGs that
-# can't draw where they are used:
-_draw_rng(rng::KeyedRNG) = rng.rng
-
 # Moving a keyed RNG moves the wrapped RNG, the key stays:
 Adapt.adapt_structure(to, rng::KeyedRNG) = KeyedRNG(adapt(to, rng.rng), rng.streamkey)
 
@@ -151,13 +141,11 @@ const _NativeFloats = (Float16, Float32, Float64)
 
 for f! in (:rand!, :randn!, :randexp!)
     @eval function Random.$f!(rng::KeyedRNG, A::_DenseHostArray)
-        _assert_not_compiling(_KeyedDraw())
-        return Random.$f!(_draw_rng(rng), A)
+        return Random.$f!(rng.rng, A)
     end
 end
 function Random.rand!(rng::KeyedRNG, A::_DenseHostArray, ::Type{X}) where {X}
-    _assert_not_compiling(_KeyedDraw())
-    return Random.rand!(_draw_rng(rng), A, X)
+    return Random.rand!(rng.rng, A, X)
 end
 # Fills with the samplers that Xoshiro implements in bulk:
 for S in (
@@ -165,25 +153,21 @@ for S in (
     (Random.SamplerTrivial{Random.CloseOpen01{T}} for T in _NativeFloats)...
 )
     @eval function Random.rand!(rng::KeyedRNG, A::_DenseHostArray, sp::$S)
-        _assert_not_compiling(_KeyedDraw())
-        return Random.rand!(_draw_rng(rng), A, sp)
+        return Random.rand!(rng.rng, A, sp)
     end
 end
 
 function Random.rand!(rng::KeyedRNG, A::GPUArraysCore.AnyGPUArray)
-    _assert_not_compiling(_KeyedDraw())
-    return Random.rand!(_draw_rng(rng), A)
+    return Random.rand!(rng.rng, A)
 end
 function Random.randn!(
     rng::KeyedRNG,
     A::GPUArraysCore.AnyGPUArray{T}
 ) where {T<:Union{AbstractFloat,Complex{<:AbstractFloat}}}
-    _assert_not_compiling(_KeyedDraw())
-    return Random.randn!(_draw_rng(rng), A)
+    return Random.randn!(rng.rng, A)
 end
 function Random.randexp!(rng::KeyedRNG, A::GPUArraysCore.AnyGPUArray)
-    _assert_not_compiling(_KeyedDraw())
-    return Random.randexp!(_draw_rng(rng), A)
+    return Random.randexp!(rng.rng, A)
 end
 
 # Allocating draws go to the wrapped RNG as well, so GPU RNGs allocate on
@@ -194,20 +178,16 @@ const _ScalarElement = Union{Number,Char,Tuple,Pair}
 for f in (:rand, :randn, :randexp)
     @eval begin
         function Random.$f(rng::KeyedRNG, dims::Dims)
-            _assert_not_compiling(_KeyedDraw())
-            return Random.$f(_draw_rng(rng), dims)
+            return Random.$f(rng.rng, dims)
         end
         function Random.$f(rng::KeyedRNG, d::Integer, dims::Integer...)
-            _assert_not_compiling(_KeyedDraw())
-            return Random.$f(_draw_rng(rng), d, dims...)
+            return Random.$f(rng.rng, d, dims...)
         end
         function Random.$f(rng::KeyedRNG, ::Type{X}, dims::Dims) where {X<:_ScalarElement}
-            _assert_not_compiling(_KeyedDraw())
-            return Random.$f(_draw_rng(rng), X, dims)
+            return Random.$f(rng.rng, X, dims)
         end
         function Random.$f(rng::KeyedRNG, ::Type{X}, d::Integer, dims::Integer...) where {X<:_ScalarElement}
-            _assert_not_compiling(_KeyedDraw())
-            return Random.$f(_draw_rng(rng), X, d, dims...)
+            return Random.$f(rng.rng, X, d, dims...)
         end
     end
 end
@@ -225,38 +205,23 @@ for S in (
     Random.SamplerTrivial{Random.UInt104{UInt128}}
 )
     @eval function Random.rand(rng::KeyedRNG, sp::$S)
-        _assert_not_compiling(_KeyedDraw())
-        return Random.rand(_draw_rng(rng), sp)
+        return Random.rand(rng.rng, sp)
     end
 end
 
 get_compute_unit_impl(rng::KeyedRNG) = get_compute_unit(rng.rng)
 
 function _fill_random!(f!::F, rng::KeyedRNG, A::AbstractArray) where {F}
-    _assert_not_compiling(_KeyedDraw())
-    return _fill_random!(f!, _draw_rng(rng), A)
+    return _fill_random!(f!, rng.rng, A)
 end
 function _draw_scalar(f!::F, rng::KeyedRNG, ::Type{T}, cunit::AbstractComputeUnit) where {F,T}
-    _assert_not_compiling(_KeyedDraw())
-    return _draw_scalar(f!, _draw_rng(rng), T, cunit)
+    return _draw_scalar(f!, rng.rng, T, cunit)
 end
 _draw_seeds(rng::KeyedRNG, home::AbstractComputeUnit) = _draw_seeds(rng.rng, home)
 
 # An RNG derived to replace a keyed one keeps its key:
 _keep_streamkey(::AbstractRNG, rng::AbstractRNG) = rng
 _keep_streamkey(keyed::KeyedRNG, rng::AbstractRNG) = KeyedRNG(rng, keyed.streamkey)
-
-# Compiled code works with the wrapped RNGs. A key frozen into a compiled
-# function would come back with results computed for other keys. Keys are
-# stripped through Adapt, so everything that can be moved to a compute unit
-# can be stripped:
-struct _StripStreamKeys end
-_strip_streamkeys(x) = adapt(_StripStreamKeys(), x)
-Adapt.adapt_structure(::_StripStreamKeys, rng::KeyedRNG) = rng.rng
-function Adapt.adapt_structure(::_StripStreamKeys, ctx::GenContext{T}) where {T}
-    return GenContext{T}(ctx.cunit, _strip_streamkeys(ctx.rng))
-end
-
 
 # Key derivation. Threefry-4x64 serves as a pseudorandom function from a key
 # and a 256-bit counter block to a new key. The first counter word names the
@@ -315,7 +280,6 @@ _leaf_seeds(key::NTuple{4,UInt64}) = _derive_streamkey(key, (_STREAMKEY_LEAF, UI
 
 
 function subrng(rng::KeyedRNG, id, ids...)
-    _assert_not_compiling(_KeyedCreate())
     key = _path_streamkey(rng.streamkey, id, ids...)
     home = _rng_home(get_compute_unit(rng.rng), CPUnit())
     leaf = _within_unit(() -> _seeded_rng_like(rng.rng, home, _leaf_seeds(key)), home)
@@ -323,7 +287,6 @@ function subrng(rng::KeyedRNG, id, ids...)
 end
 
 function rootrng(cunit::AbstractComputeUnit, key::NTuple{4,UInt64})
-    _assert_not_compiling(_KeyedCreate())
     return KeyedRNG(_seeded_rng(cunit, _leaf_seeds(key)), key)
 end
 rootrng(cunit::AbstractComputeUnit, seed::Integer) = rootrng(cunit, _seed_streamkey(seed))

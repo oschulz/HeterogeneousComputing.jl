@@ -7,17 +7,9 @@ using Random
 using MLDataDevices: CPUDevice
 using JLArrays
 import GPUArrays
-import Adapt
 using Adapt: adapt
 
-using HeterogeneousComputing: _nonzero_xoshiro_state, _symbol_digest, _seeded_rng_like, _strip_streamkeys
-
-
-# A user struct that supports Adapt:
-struct _KeyBox{T}
-    value::T
-end
-Adapt.@adapt_structure _KeyBox
+using HeterogeneousComputing: _nonzero_xoshiro_state, _symbol_digest, _seeded_rng_like
 
 
 @testset "streamkey" begin
@@ -193,20 +185,6 @@ Adapt.@adapt_structure _KeyBox
         @test rand(rootcontext(42), 3) == rand(rootcontext(42), 3) == rand(rootrng(42), 3)
         test_gencontext_draws(ctx)
         test_gencontext_draws(GenContext{Float32}(CPUnit(), subrng(rootrng(1), :x)))
-    end
-
-    @testset "stripping keys" begin
-        r = rootrng(42)
-        ctx = rootcontext(42)
-        @test _strip_streamkeys(r) === r.rng
-        @test get_rng(_strip_streamkeys(ctx)) === get_rng(ctx).rng
-        @test _strip_streamkeys(3) === 3 && _strip_streamkeys("s") === "s"
-        stripped = _strip_streamkeys((r, 1, (a = ctx, b = "x")))
-        @test stripped[1] === r.rng && stripped[2] === 1 && stripped[3].b === "x"
-        @test get_rng(stripped[3].a) === get_rng(ctx).rng
-        boxed = _strip_streamkeys(_KeyBox((r, ctx)))
-        @test boxed isa _KeyBox && boxed.value[1] === r.rng
-        @test get_rng(boxed.value[2]) === get_rng(ctx).rng
     end
 
     @testset "JLArrays" begin

@@ -158,46 +158,37 @@ Adapt.@adapt_structure _ReactantBox
         same_child() = subcontext(GenContext{Float32}(cunit, rootrng(cunit, 42)), :chain, 1)
         @test Array(get_rng(same_child()).rng.seed) == Array(get_rng(child).rng.seed)
 
-        # on_device runs compiled code with the wrapped RNGs, whose state
-        # advances across calls, the host keeps the keys:
+        # Compiled code draws from the wrapped RNG, whose state advances
+        # across calls. The key stays with the RNG on the host:
         h(ctx, x) = x .+ randn(ctx, size(x))
-        h_on_device = on_device(h, cunit, child, x)
-        y1, y2 = h_on_device(child, x), h_on_device(child, x)
+        h_compiled = @compile h(child, x)
+        y1, y2 = h_compiled(child, x), h_compiled(child, x)
         @test y1 isa Reactant.ConcreteRArray{Float32,1} && Array(y1) != Array(y2)
-        pass_through = on_device(ctx -> (rand(ctx, 2), get_rng(ctx)), cunit, child)
-        passed = pass_through(child)
-        @test passed[1] isa Reactant.ConcreteRArray{Float32,1}
-        @test !has_rng_streamkey(passed[2])
-        @test has_rng_streamkey(get_rng(child))
+        @test rng_streamkey(get_rng(child)) == rng_streamkey(get_rng(same_child()))
+        # The same compiled function draws reproducibly for each key:
+        other_child() = subcontext(GenContext{Float32}(cunit, rootrng(cunit, 42)), :chain, 2)
+        @test Array(h_compiled(other_child(), x)) == Array(h_compiled(other_child(), x))
+        @test Array(h_compiled(other_child(), x)) != Array(h_compiled(same_child(), x))
+        @test Array(h_compiled(same_child(), x)) == Array(y1)
 
-        # Bare keyed RNGs work as on_device arguments too, and the same
-        # compiled function draws different numbers for different keys:
+        # Bare keyed RNGs, on_device and user structs work alike:
         krng = get_rng(child)
-        draw_on_device = on_device(r -> rand(r, Float32, 3), cunit, krng)
-        d1, d2 = draw_on_device(krng), draw_on_device(krng)
-        @test d1 isa Reactant.ConcreteRArray{Float32,1} && Array(d1) != Array(d2)
-        @test has_rng_streamkey(krng)
-        @test Array(h_on_device(child, x)) != Array(h_on_device(subcontext(kctx, :chain, 2), x))
-        # Keys are stripped from everything Adapt can reach:
-        boxed_draw = on_device(b -> rand(b.value, Float32, 3), cunit, _ReactantBox(krng))
-        @test boxed_draw(_ReactantBox(krng)) isa Reactant.ConcreteRArray{Float32,1}
-        boxed_ctx_draw = on_device(b -> randn(b.value[1], 3), cunit, _ReactantBox((child, 1)))
-        @test boxed_ctx_draw(_ReactantBox((child, 1))) isa Reactant.ConcreteRArray{Float32,1}
+        draw = @compile ((r, x) -> x .+ rand(r, Float32, size(x)))(krng, x)
+        @test Array(draw(krng, x)) != Array(draw(krng, x))
+        h_on_device = on_device(h, cunit, child, x)
+        @test Array(h_on_device(child, x)) != Array(h_on_device(child, x))
+        boxed_draw = on_device(b -> randn(b.value[1], 3), cunit, _ReactantBox((child, 1)))
+        @test boxed_draw(_ReactantBox((child, 1))) isa Reactant.ConcreteRArray{Float32,1}
 
-        # Reactant doesn't trace keyed RNGs itself. Contexts with keyed RNGs
-        # fail in compiled code instead of becoming constants, and so do direct
-        # Random calls on keyed Reactant RNGs. (Reactant treats direct Random
-        # calls on other keyed RNGs like on any foreign RNG, seeding a traced
-        # RNG from them once when compiling.)
-        @test_throws ArgumentError @compile h(child, x)
-        @test_throws ArgumentError @compile ((r, x) -> x .+ rand(r, Float32, size(x)))(krng, x)
-        @test_throws ArgumentError rand(krng, Float32, 3)
-        @test (@jit h(GenContext{Float32}(cunit, krng.rng), x)) isa Reactant.ConcreteRArray{Float32,1}
-        # Keyed RNGs can't be created or derived within compiled code:
+        # Compiled code doesn't see keys, RNGs it returns have none:
+        returned = @jit(((ctx, x) -> (rand(ctx, 2), get_rng(ctx)))(child, x))
+        @test !has_rng_streamkey(returned[2]) && has_rng_streamkey(get_rng(child))
         @test_throws ArgumentError @jit(((ctx, x) -> randn(subcontext(ctx, 1), size(x)))(child, x))
+        # Like other Reactant RNGs, keyed ones can't be created within compiled code:
         @test_throws ArgumentError @jit((x -> randn(GenContext{Float32}(cunit, rootrng(cunit, 1)), size(x)))(x))
-        @test_throws ArgumentError @jit((x -> x .+ rand(rootrng(42), Float32, size(x)))(x))
-        @test_throws ArgumentError @jit((x -> x .+ rand(subrng(rootrng(42), 1), Float32, size(x)))(x))
+        # Moving data to Reactant keeps keys, draws still need compiled code:
+        @test Reactant.to_rarray(krng) isa KeyedRNG{<:Reactant.ReactantRNG}
+        @test_throws ArgumentError rand(child, 3)
 
         # Moving keyed contexts between units keeps their keys:
         on_host = adapt(CPUnit(), child)

@@ -78,7 +78,7 @@ step_ctx = subcontext(ctx, :proposal, step)
 randn(step_ctx, (n, k))
 ```
 
-On Reactant, keyed RNGs and contexts are created on the host and passed to compiled code as arguments of [`on_device`](@ref), which hands the wrapped RNGs to the compiled code and keeps the keys on the host. Reactant's own `@compile` doesn't trace keyed RNGs: a context with a keyed RNG raises an error there, and a keyed RNG used directly with `Random` functions is treated like any other non-Reactant RNG, which Reactant seeds a traced generator from once, when compiling. Code compiled with `@compile` therefore has to take the wrapped RNG, `get_rng(ctx).rng`, instead.
+On Reactant, keyed RNGs and contexts are created on the host and passed into compiled code, like other RNGs. Compiled code draws from the wrapped RNG and doesn't see the key, so RNGs can't be derived there, and an RNG that compiled code returns has no key.
 
 # Reactant
 
