@@ -8,6 +8,7 @@ Tools for heterogeneous computing in Julia.
 module HeterogeneousComputing
 
 using Random
+using SHA: sha256
 using Base: AbstractLock
 
 using MLDataDevices: MLDataDevices, AbstractDevice, CPUDevice, UnknownDevice
@@ -20,6 +21,7 @@ include("precision.jl")
 include("rng.jl")
 include("compute_unit.jl")
 include("gen_context.jl")
+include("threefry.jl")
 include("numtype.jl")
 include("on_device.jl")
 include("field_recursion.jl")
