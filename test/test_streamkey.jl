@@ -238,6 +238,7 @@ Adapt.@adapt_structure _KeyBox
         @test randn(jl_root, 4) isa JLArray
         @test rand(jl_root, Char, 5) isa JLArray{Char,1}
         @test rand(jl_root, Tuple{Float32,Float32}, 5) isa JLArray{Tuple{Float32,Float32},1}
+        @test rand(jl_root, Pair{Float32,Float32}, (2, 3)) isa JLArray{Pair{Float32,Float32},2}
         @test Array(rand(rootrng(jl_unit, 42), Float32, 5)) == Array(rand(rootrng(jl_unit, 42).rng, Float32, 5))
         @test Array(randn(rootrng(jl_unit, 42), Float32, (2, 2))) ==
               Array(randn(rootrng(jl_unit, 42).rng, Float32, (2, 2)))

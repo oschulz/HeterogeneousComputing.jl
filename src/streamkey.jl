@@ -96,9 +96,12 @@ export rootrng
 
 A random number generator with a stream key, see [`rng_streamkey`](@ref).
 
-Wraps an RNG that generates the numbers and forwards the `Random` API to it.
-`Random.seed!` reseeds the wrapped RNG, the key stays. Keyed RNGs are created
-with [`rootrng`](@ref) and [`subrng`](@ref).
+Wraps an RNG that generates the numbers. Fills of dense host arrays and of
+GPU arrays, and draws that allocate arrays of numbers, characters, tuples or
+pairs, go to the wrapped RNG unchanged, so they match its results. Other
+draws use `Random`'s generic algorithms on top of the wrapped
+RNG's scalar draws. `Random.seed!` reseeds the wrapped RNG, the key stays.
+Keyed RNGs are created with [`rootrng`](@ref) and [`subrng`](@ref).
 """
 struct KeyedRNG{R<:AbstractRNG} <: AbstractRNG
     rng::R
@@ -186,7 +189,7 @@ end
 # Allocating draws go to the wrapped RNG as well, so GPU RNGs allocate on
 # their device. Packages define such draws of their own array types for any
 # RNG, so the element types are limited to ones that can't be arrays:
-const _ScalarElement = Union{Number,Char,Tuple}
+const _ScalarElement = Union{Number,Char,Tuple,Pair}
 
 for f in (:rand, :randn, :randexp)
     @eval begin
