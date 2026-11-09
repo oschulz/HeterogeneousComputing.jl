@@ -7,6 +7,7 @@ Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
 GPUArraysCore = "46192b85-c4d5-4398-a991-12ede77f4527"
 MLDataDevices = "7e8f7934-dd98-4c1a-8fe8-92b47a384d40"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+SHA = "ea8e919c-243c-51af-8825-aaa63cd721ce"
 
 [weakdeps]
 AMDGPU = "21141c5a-9bdb-4563-92ae-f87d6854732e"
@@ -35,4 +36,5 @@ KernelAbstractions = "0.9, 0.10"
 MLDataDevices = "1.17"
 Random = "1"
 Reactant = "0.2.203"
+SHA = "0.7, 1"
 julia = "1.10"

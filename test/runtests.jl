@@ -31,6 +31,7 @@ Test.@testset "Package HeterogeneousComputing" begin
     include("test_compute_unit.jl")
     include("test_gen_context.jl")
     include("test_threefry.jl")
+    include("test_streamkey.jl")
     include("test_numtype.jl")
     include("test_on_device.jl")
     test_reactant && include("test_reactant.jl")

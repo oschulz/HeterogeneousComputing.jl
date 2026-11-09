@@ -138,4 +138,44 @@ Reactant.set_default_backend(get(ENV, "HETEROGENEOUSCOMPUTING_REACTANT_BACKEND",
 
     g = on_device((x, y) -> sum(x .* y), cunit, rand(Float32, 3), rand(Float32, 3))
     @test g(ones(Float32, 3), ones(Float32, 3)) ≈ 3
+
+    @testset "stream keys" begin
+        kctx = GenContext{Float32}(cunit, rootrng(cunit, 42))
+        @test get_rng(kctx) isa KeyedRNG{<:Reactant.ReactantRNG}
+        @test get_compute_unit(get_rng(kctx)) == cunit
+        @test rng_streamkey(get_rng(kctx)) == rng_streamkey(rootrng(42))
+        child = subcontext(kctx, :chain, 1)
+        @test get_rng(child) isa KeyedRNG{<:Reactant.ReactantRNG}
+        @test get_compute_unit(child) == cunit
+        @test rng_streamkey(get_rng(child)) == rng_streamkey(subrng(rootrng(42), :chain, 1))
+        same_child() = subcontext(GenContext{Float32}(cunit, rootrng(cunit, 42)), :chain, 1)
+        @test Array(get_rng(same_child()).rng.seed) == Array(get_rng(child).rng.seed)
+
+        # on_device runs compiled code with the wrapped RNGs, whose state
+        # advances across calls, the host keeps the keys:
+        h(ctx, x) = x .+ randn(ctx, size(x))
+        h_on_device = on_device(h, cunit, child, x)
+        y1, y2 = h_on_device(child, x), h_on_device(child, x)
+        @test y1 isa Reactant.ConcreteRArray{Float32,1} && Array(y1) != Array(y2)
+        pass_through = on_device(ctx -> (rand(ctx, 2), get_rng(ctx)), cunit, child)
+        passed = pass_through(child)
+        @test passed[1] isa Reactant.ConcreteRArray{Float32,1}
+        @test !has_rng_streamkey(passed[2])
+        @test has_rng_streamkey(get_rng(child))
+
+        # Reactant doesn't trace keyed RNGs itself:
+        @test_throws ArgumentError @compile h(child, x)
+        @test (@jit h(GenContext{Float32}(cunit, get_rng(child).rng), x)) isa Reactant.ConcreteRArray{Float32,1}
+        # Keyed RNGs can't be created or derived within compiled code:
+        @test_throws ArgumentError @jit(((ctx, x) -> randn(subcontext(ctx, 1), size(x)))(child, x))
+        @test_throws ArgumentError @jit((x -> randn(GenContext{Float32}(cunit, rootrng(cunit, 1)), size(x)))(x))
+
+        # Moving keyed contexts between units keeps their keys:
+        on_host = adapt(CPUnit(), child)
+        @test get_rng(on_host) isa KeyedRNG{Xoshiro}
+        @test rng_streamkey(get_rng(on_host)) == rng_streamkey(get_rng(child))
+        moved = adapt(cunit, subcontext(rootcontext(42), :chain, 1))
+        @test get_rng(moved) isa KeyedRNG{<:Reactant.ReactantRNG}
+        @test rng_streamkey(get_rng(moved)) == rng_streamkey(get_rng(child))
+    end
 end

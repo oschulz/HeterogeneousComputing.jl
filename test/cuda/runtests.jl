@@ -66,4 +66,27 @@ CUDA.allowscalar(false)
     # GPU uniform variates can be exactly one, exponential variates derived
     # from them must still be finite:
     @test all(isfinite, randexp(ctx, 10^8))
+
+    # Keyed RNGs on the unit use its default kind of RNG, their keys don't
+    # depend on the placement:
+    kroot = rootrng(cunit, 42)
+    @test kroot isa KeyedRNG{typeof(default_device_rng(cunit))}
+    @test get_compute_unit(kroot) === cunit
+    @test rng_streamkey(kroot) == rng_streamkey(rootrng(42))
+    kchild = subrng(kroot, :walker, 1)
+    @test kchild isa typeof(kroot)
+    @test rng_streamkey(kchild) == rng_streamkey(subrng(rootrng(42), :walker, 1))
+    keyed_ctx(ids...) = GenContext{Float32}(cunit, subrng(rootrng(cunit, 42), ids...))
+    @test Array(rand(keyed_ctx(1), 4)) == Array(rand(keyed_ctx(1), 4))
+    @test Array(rand(keyed_ctx(1), 4)) != Array(rand(keyed_ctx(2), 4))
+    A, B = CUDA.zeros(Float32, 5), CUDA.zeros(Float32, 5)
+    @test Array(rand!(subrng(kroot, 1), A)) == Array(rand!(subrng(kroot, 1).rng, B))
+    @test Array(randn!(subrng(kroot, 2), A)) == Array(randn!(subrng(kroot, 2).rng, B))
+    test_gencontext_draws(GenContext{Float32}(cunit, kchild))
+    moved = adapt(cunit, subcontext(rootcontext(42), :chain, 1))
+    @test get_rng(moved) isa typeof(kroot)
+    @test rng_streamkey(get_rng(moved)) == rng_streamkey(subrng(rootrng(42), :chain, 1))
+    back = adapt(CPUnit(), GenContext{Float32}(cunit, kchild))
+    @test get_rng(back) isa KeyedRNG{Xoshiro}
+    @test rng_streamkey(get_rng(back)) == rng_streamkey(kchild)
 end

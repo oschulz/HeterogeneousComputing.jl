@@ -45,7 +45,10 @@ should reside on the compute unit of `ctx`) with random numbers.
 `adapt(cunit, ctx)` moves a context to the compute unit `cunit`. The random
 number generator stays if it is native to `cunit`, otherwise a new generator
 native to `cunit` is created, seeded with random numbers drawn from the old
-one.
+one. A stream key of the generator (see [`rng_streamkey`](@ref)) is kept.
+
+[`rootcontext`](@ref) creates contexts with keyed RNGs, [`subcontext`](@ref)
+derives child contexts from them.
 """
 struct GenContext{T<:AbstractFloat,CU<:AbstractComputeUnit,RNG<:AbstractRNG}
     cunit::CU
@@ -146,7 +149,9 @@ _rng_native_to(::Any, ::AbstractComputeUnit) = false
 
 # A new RNG native to `cunit`, seeded with random numbers drawn from the RNG
 # of `ctx`:
-_derived_rng(ctx::GenContext, cunit::AbstractComputeUnit) = _seeded_rng(cunit, _draw_seeds(ctx))
+function _derived_rng(ctx::GenContext, cunit::AbstractComputeUnit)
+    return _keep_streamkey(ctx.rng, _seeded_rng(cunit, _draw_seeds(ctx)))
+end
 
 function _draw_seeds(ctx::GenContext)
     return _draw_seeds(ctx.rng, _rng_home(get_compute_unit(ctx.rng), ctx.cunit))
@@ -170,7 +175,14 @@ function _seeded_rng(cunit::AbstractComputeUnit, seeds::NTuple{4,UInt64})
     return _within_unit(() -> _seeded_rng_like(default_device_rng(cunit), cunit, seeds), cunit)
 end
 
-_seeded_rng_like(::Random.TaskLocalRNG, ::AbstractComputeUnit, seeds::NTuple{4,UInt64}) = Xoshiro(collect(seeds))
+function _seeded_rng_like(::Union{Random.TaskLocalRNG,Xoshiro}, ::AbstractComputeUnit, seeds::NTuple{4,UInt64})
+    return Xoshiro(_nonzero_xoshiro_state(seeds)...)
+end
+
+# Xoshiro never leaves the all-zero state:
+function _nonzero_xoshiro_state(seeds::NTuple{4,UInt64})
+    return all(iszero, seeds) ? (UInt64(1), UInt64(0), UInt64(0), UInt64(0)) : seeds
+end
 
 function _seeded_rng_like(rng::AbstractRNG, cunit::AbstractComputeUnit, ::NTuple{4,UInt64})
     return throw(ArgumentError("Don't know how to create a new RNG like $(typeof(rng)) for compute unit $cunit"))

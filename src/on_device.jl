@@ -56,7 +56,7 @@ end
 
 function (f::_OnDevice{N})(args::Vararg{Any,N}) where {N}
     result_cunit = _result_cunit(get_compute_unit(args), f.cunit)
-    adapted_args = adapt(f.cunit, args)
+    adapted_args = _device_args(f.cunit, adapt(f.cunit, args))
     result = _within_unit(() -> _run_maybe_with_lock(f.f_device, f.lock, adapted_args...), f.cunit)
     return adapt(result_cunit, result)
 end
@@ -67,6 +67,9 @@ function (f::_OnDevice{N})(@nospecialize(args...)) where {N}
     )
 end
 
+
+# Backends may prepare the adapted arguments further:
+_device_args(::AbstractComputeUnit, args::Tuple) = args
 
 # Results go back to the compute unit of the arguments:
 _result_cunit(cunit_args, @nospecialize(cunit)) = cunit_args
