@@ -7,9 +7,17 @@ using Random
 using MLDataDevices: CPUDevice
 using JLArrays
 import GPUArrays
+import Adapt
 using Adapt: adapt
 
-using HeterogeneousComputing: _nonzero_xoshiro_state, _symbol_digest, _seeded_rng_like
+using HeterogeneousComputing: _nonzero_xoshiro_state, _symbol_digest, _seeded_rng_like, _strip_streamkeys
+
+
+# A user struct that supports Adapt:
+struct _KeyBox{T}
+    value::T
+end
+Adapt.@adapt_structure _KeyBox
 
 
 @testset "streamkey" begin
@@ -134,6 +142,11 @@ using HeterogeneousComputing: _nonzero_xoshiro_state, _symbol_digest, _seeded_rn
         @static if isdefined(Base, :Memory)
             @test fills_alike(rand!, () -> Memory{Float64}(undef, 60))
         end
+        # Explicit samplers, and the buffers Random fills for big integer ranges:
+        @test fills_alike((rng, A) -> rand!(rng, A, Random.Sampler(rng, Float64)), () -> zeros(64))
+        @test fills_alike((rng, A) -> rand!(rng, A, Random.Sampler(rng, UInt8)), () -> zeros(UInt8, 10^4))
+        @test rand(copy(r), Random.Sampler(r, UInt8), 64) == rand(copy(leaf), Random.Sampler(leaf, UInt8), 64)
+        @test rand(copy(r), big(1):(big(2) ^ 1024)) == rand(copy(leaf), big(1):(big(2) ^ 1024))
 
         # Drawing advances the wrapped RNG, reseeding keeps the key:
         a = copy(r)
@@ -182,6 +195,20 @@ using HeterogeneousComputing: _nonzero_xoshiro_state, _symbol_digest, _seeded_rn
         test_gencontext_draws(GenContext{Float32}(CPUnit(), subrng(rootrng(1), :x)))
     end
 
+    @testset "stripping keys" begin
+        r = rootrng(42)
+        ctx = rootcontext(42)
+        @test _strip_streamkeys(r) === r.rng
+        @test get_rng(_strip_streamkeys(ctx)) === get_rng(ctx).rng
+        @test _strip_streamkeys(3) === 3 && _strip_streamkeys("s") === "s"
+        stripped = _strip_streamkeys((r, 1, (a = ctx, b = "x")))
+        @test stripped[1] === r.rng && stripped[2] === 1 && stripped[3].b === "x"
+        @test get_rng(stripped[3].a) === get_rng(ctx).rng
+        boxed = _strip_streamkeys(_KeyBox((r, ctx)))
+        @test boxed isa _KeyBox && boxed.value[1] === r.rng
+        @test get_rng(boxed.value[2]) === get_rng(ctx).rng
+    end
+
     @testset "JLArrays" begin
         jl_unit = AbstractComputeUnit(JLBackend())
         ctx = rootcontext(42)
@@ -209,6 +236,8 @@ using HeterogeneousComputing: _nonzero_xoshiro_state, _symbol_digest, _seeded_rn
         @test rand(jl_root, Float32, 5) isa JLArray{Float32,1}
         @test size(rand(jl_root, 2, 3)) == (2, 3) && rand(jl_root, 2, 3) isa JLArray
         @test randn(jl_root, 4) isa JLArray
+        @test rand(jl_root, Char, 5) isa JLArray{Char,1}
+        @test rand(jl_root, Tuple{Float32,Float32}, 5) isa JLArray{Tuple{Float32,Float32},1}
         @test Array(rand(rootrng(jl_unit, 42), Float32, 5)) == Array(rand(rootrng(jl_unit, 42).rng, Float32, 5))
         @test Array(randn(rootrng(jl_unit, 42), Float32, (2, 2))) ==
               Array(randn(rootrng(jl_unit, 42).rng, Float32, (2, 2)))

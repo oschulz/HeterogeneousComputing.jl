@@ -136,10 +136,15 @@ end
 # forwarded below. Forwarding fills of all arrays would be ambiguous with
 # packages that fill their own array types from any RNG.
 @static if isdefined(Base, :Memory)
-    const _DenseHostArray = Union{Array,Memory,SubArray{<:Any,<:Any,<:Union{Array,Memory},<:Any,true}}
+    const _DenseHostArray = Union{
+        Array,Memory,SubArray{<:Any,<:Any,<:Union{Array,Memory},<:Any,true},Random.UnsafeView
+    }
 else
-    const _DenseHostArray = Union{Array,SubArray{<:Any,<:Any,<:Array,<:Any,true}}
+    const _DenseHostArray = Union{Array,SubArray{<:Any,<:Any,<:Array,<:Any,true},Random.UnsafeView}
 end
+
+const _NativeIntegers = (Bool, Int8, UInt8, Int16, UInt16, Int32, UInt32, Int64, UInt64, Int128, UInt128)
+const _NativeFloats = (Float16, Float32, Float64)
 
 for f! in (:rand!, :randn!, :randexp!)
     @eval function Random.$f!(rng::KeyedRNG, A::_DenseHostArray)
@@ -150,6 +155,16 @@ end
 function Random.rand!(rng::KeyedRNG, A::_DenseHostArray, ::Type{X}) where {X}
     _assert_not_compiling(_KeyedDraw())
     return Random.rand!(_draw_rng(rng), A, X)
+end
+# Fills with the samplers that Xoshiro implements in bulk:
+for S in (
+    (Random.SamplerType{T} for T in _NativeIntegers)...,
+    (Random.SamplerTrivial{Random.CloseOpen01{T}} for T in _NativeFloats)...
+)
+    @eval function Random.rand!(rng::KeyedRNG, A::_DenseHostArray, sp::$S)
+        _assert_not_compiling(_KeyedDraw())
+        return Random.rand!(_draw_rng(rng), A, sp)
+    end
 end
 
 function Random.rand!(rng::KeyedRNG, A::GPUArraysCore.AnyGPUArray)
@@ -168,9 +183,11 @@ function Random.randexp!(rng::KeyedRNG, A::GPUArraysCore.AnyGPUArray)
     return Random.randexp!(_draw_rng(rng), A)
 end
 
-# Allocating draws of numbers go to the wrapped RNG as well, so GPU RNGs
-# allocate on their device. They are limited to number types because packages
-# define such draws of their own array types for any RNG.
+# Allocating draws go to the wrapped RNG as well, so GPU RNGs allocate on
+# their device. Packages define such draws of their own array types for any
+# RNG, so the element types are limited to ones that can't be arrays:
+const _ScalarElement = Union{Number,Char,Tuple}
+
 for f in (:rand, :randn, :randexp)
     @eval begin
         function Random.$f(rng::KeyedRNG, dims::Dims)
@@ -181,11 +198,11 @@ for f in (:rand, :randn, :randexp)
             _assert_not_compiling(_KeyedDraw())
             return Random.$f(_draw_rng(rng), d, dims...)
         end
-        function Random.$f(rng::KeyedRNG, ::Type{X}, dims::Dims) where {X<:Number}
+        function Random.$f(rng::KeyedRNG, ::Type{X}, dims::Dims) where {X<:_ScalarElement}
             _assert_not_compiling(_KeyedDraw())
             return Random.$f(_draw_rng(rng), X, dims)
         end
-        function Random.$f(rng::KeyedRNG, ::Type{X}, d::Integer, dims::Integer...) where {X<:Number}
+        function Random.$f(rng::KeyedRNG, ::Type{X}, d::Integer, dims::Integer...) where {X<:_ScalarElement}
             _assert_not_compiling(_KeyedDraw())
             return Random.$f(_draw_rng(rng), X, d, dims...)
         end
@@ -198,17 +215,13 @@ Random.rng_native_52(rng::KeyedRNG) = Random.rng_native_52(rng.rng)
 Random.seed!(rng::KeyedRNG) = (Random.seed!(rng.rng); rng)
 Random.seed!(rng::KeyedRNG, seed) = (Random.seed!(rng.rng, seed); rng)
 
-for T in (Bool, Int8, UInt8, Int16, UInt16, Int32, UInt32, Int64, UInt64, Int128, UInt128)
-    @eval function Random.rand(rng::KeyedRNG, sp::Random.SamplerType{$T})
-        _assert_not_compiling(_KeyedDraw())
-        return Random.rand(_draw_rng(rng), sp)
-    end
-end
 for S in (
-    Random.UInt52Raw{UInt64}, Random.UInt52{UInt64}, Random.UInt104{UInt128},
-    Random.CloseOpen01{Float16}, Random.CloseOpen01{Float32}, Random.CloseOpen01{Float64}
+    (Random.SamplerType{T} for T in _NativeIntegers)...,
+    (Random.SamplerTrivial{Random.CloseOpen01{T}} for T in _NativeFloats)...,
+    Random.SamplerTrivial{Random.UInt52Raw{UInt64}}, Random.SamplerTrivial{Random.UInt52{UInt64}},
+    Random.SamplerTrivial{Random.UInt104{UInt128}}
 )
-    @eval function Random.rand(rng::KeyedRNG, sp::Random.SamplerTrivial{$S})
+    @eval function Random.rand(rng::KeyedRNG, sp::$S)
         _assert_not_compiling(_KeyedDraw())
         return Random.rand(_draw_rng(rng), sp)
     end
@@ -231,12 +244,15 @@ _keep_streamkey(::AbstractRNG, rng::AbstractRNG) = rng
 _keep_streamkey(keyed::KeyedRNG, rng::AbstractRNG) = KeyedRNG(rng, keyed.streamkey)
 
 # Compiled code works with the wrapped RNGs. A key frozen into a compiled
-# function would come back with results computed for other keys:
-_strip_streamkeys(@nospecialize(x)) = x
-_strip_streamkeys(rng::KeyedRNG) = rng.rng
-_strip_streamkeys(ctx::GenContext{T}) where {T} = GenContext{T}(ctx.cunit, _strip_streamkeys(ctx.rng))
-_strip_streamkeys(x::Tuple) = map(_strip_streamkeys, x)
-_strip_streamkeys(x::NamedTuple) = map(_strip_streamkeys, x)
+# function would come back with results computed for other keys. Keys are
+# stripped through Adapt, so everything that can be moved to a compute unit
+# can be stripped:
+struct _StripStreamKeys end
+_strip_streamkeys(x) = adapt(_StripStreamKeys(), x)
+Adapt.adapt_structure(::_StripStreamKeys, rng::KeyedRNG) = rng.rng
+function Adapt.adapt_structure(::_StripStreamKeys, ctx::GenContext{T}) where {T}
+    return GenContext{T}(ctx.cunit, _strip_streamkeys(ctx.rng))
+end
 
 
 # Key derivation. Threefry-4x64 serves as a pseudorandom function from a key

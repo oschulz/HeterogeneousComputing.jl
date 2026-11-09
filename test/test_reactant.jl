@@ -16,11 +16,18 @@ ENV["XLA_FLAGS"] = get(ENV, "XLA_FLAGS", "") * " --xla_force_host_platform_devic
 
 using Reactant
 using MLDataDevices: ReactantDevice, reactant_device, get_device
+import Adapt
 using Adapt: adapt
 using Random
 using KernelAbstractions
 
 Reactant.set_default_backend(get(ENV, "HETEROGENEOUSCOMPUTING_REACTANT_BACKEND", "cpu"))
+
+# A user struct that supports Adapt:
+struct _ReactantBox{T}
+    value::T
+end
+Adapt.@adapt_structure _ReactantBox
 
 @testset "Reactant" begin
     x = Reactant.to_rarray(rand(Float32, 5))
@@ -171,6 +178,11 @@ Reactant.set_default_backend(get(ENV, "HETEROGENEOUSCOMPUTING_REACTANT_BACKEND",
         @test d1 isa Reactant.ConcreteRArray{Float32,1} && Array(d1) != Array(d2)
         @test has_rng_streamkey(krng)
         @test Array(h_on_device(child, x)) != Array(h_on_device(subcontext(kctx, :chain, 2), x))
+        # Keys are stripped from everything Adapt can reach:
+        boxed_draw = on_device(b -> rand(b.value, Float32, 3), cunit, _ReactantBox(krng))
+        @test boxed_draw(_ReactantBox(krng)) isa Reactant.ConcreteRArray{Float32,1}
+        boxed_ctx_draw = on_device(b -> randn(b.value[1], 3), cunit, _ReactantBox((child, 1)))
+        @test boxed_ctx_draw(_ReactantBox((child, 1))) isa Reactant.ConcreteRArray{Float32,1}
 
         # Reactant doesn't trace keyed RNGs itself. Contexts with keyed RNGs
         # fail in compiled code instead of becoming constants, and so do direct
