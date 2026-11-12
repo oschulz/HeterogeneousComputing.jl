@@ -194,7 +194,8 @@ Adapt.@adapt_structure _ReactantBox
         on_host = adapt(CPUnit(), child)
         @test get_rng(on_host) isa KeyedRNG{Xoshiro}
         @test rng_streamkey(get_rng(on_host)) == rng_streamkey(get_rng(child))
-        moved = adapt(cunit, subcontext(rootcontext(42), :chain, 1))
+        moved = adapt(cunit, subcontext(GenContext(rootrng(42)), :chain, 1))
+        @test get_rng(rootcontext(GenContext{Float32}(cunit))) isa KeyedRNG{<:Reactant.ReactantRNG}
         @test get_rng(moved) isa KeyedRNG{<:Reactant.ReactantRNG}
         @test rng_streamkey(get_rng(moved)) == rng_streamkey(get_rng(child))
     end

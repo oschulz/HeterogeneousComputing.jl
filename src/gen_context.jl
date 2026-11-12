@@ -47,8 +47,8 @@ number generator stays if it is native to `cunit`, otherwise a new generator
 native to `cunit` is created, seeded with random numbers drawn from the old
 one. A stream key of the generator (see [`rng_streamkey`](@ref)) stays.
 
-[`rootcontext`](@ref) creates contexts with keyed RNGs, [`subcontext`](@ref)
-derives child contexts from them.
+[`rootcontext`](@ref) turns a context into one with a keyed RNG,
+[`subcontext`](@ref) derives child contexts from it.
 """
 struct GenContext{T<:AbstractFloat,CU<:AbstractComputeUnit,RNG<:AbstractRNG}
     cunit::CU

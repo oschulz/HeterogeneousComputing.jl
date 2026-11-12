@@ -303,20 +303,19 @@ rootrng(entropy::AbstractRNG) = rootrng(_rng_gen_cunit(get_compute_unit(entropy)
 
 
 """
-    rootcontext([cunit::AbstractComputeUnit,] args...)
+    rootcontext(ctx::GenContext)
 
-A [`GenContext`](@ref) on `cunit` with a keyed RNG created by
-`rootrng(cunit, args...)`, see [`rootrng`](@ref).
+A copy of `ctx` with a keyed RNG, the root of a tree of contexts derived with
+[`subcontext`](@ref).
 
-The precision is `Float64`, use `GenContext{T}(cunit, rootrng(cunit, args...))`
-for other precisions.
+The stream key is drawn from the RNG of `ctx`, which advances, see
+[`rootrng`](@ref). Use `GenContext{T}(cunit, rootrng(cunit, seed))` for a
+context whose key derives from a seed.
 """
 function rootcontext end
 export rootcontext
 
-rootcontext(cunit::AbstractComputeUnit, args...) = GenContext(cunit, rootrng(cunit, args...))
-rootcontext(dev::AbstractDevice, args...) = rootcontext(DeviceUnit(dev), args...)
-rootcontext(args...) = GenContext(rootrng(args...))
+rootcontext(ctx::GenContext{T}) where T = GenContext{T}(ctx.cunit, rootrng(ctx.cunit, ctx.rng))
 
 
 """

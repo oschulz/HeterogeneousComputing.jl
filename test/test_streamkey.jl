@@ -7,6 +7,7 @@ using Random
 using MLDataDevices: CPUDevice
 using JLArrays
 import GPUArrays
+using StaticArrays
 using Adapt: adapt
 
 using HeterogeneousComputing: _nonzero_xoshiro_state, _symbol_digest, _seeded_rng_like
@@ -106,7 +107,9 @@ using HeterogeneousComputing: _nonzero_xoshiro_state, _symbol_digest, _seeded_rn
             rng -> randn(rng, Float32), rng -> randexp(rng), rng -> rand(rng, 1:10), rng -> rand(rng, 'a':'z'),
             rng -> rand(rng, [1.5, 2.5]), rng -> rand(rng, 3), rng -> rand(rng, Int, 2, 2), rng -> randn(rng, 4),
             rng -> randexp(rng, Float32, 2), rng -> rand(rng, Float64, 10^4), rng -> randstring(rng),
-            rng -> shuffle(rng, 1:10), rng -> randperm(rng, 10)
+            rng -> shuffle(rng, 1:10), rng -> randperm(rng, 10), rng -> rand(rng, SVector{3,Float64}),
+            rng -> randn(rng, SVector{4,Float32}), rng -> randexp(rng, SMatrix{2,2,Float64,4}),
+            rng -> rand(rng, SVector{3,Float64}, (4, 5))
         )
         for draw in draws
             @test draw(copy(r)) == draw(copy(leaf))
@@ -131,6 +134,10 @@ using HeterogeneousComputing: _nonzero_xoshiro_state, _symbol_digest, _seeded_rn
         @test fills_alike(randexp!, () -> view(zeros(100), 1:60))
         @test fills_alike((rng, A) -> rand!(rng, A, UInt16), () -> view(zeros(UInt16, 100), 1:60))
         @test fills_alike(rand!, () -> BitVector(undef, 70))
+        # Static arrays are filled from scalar draws:
+        @test fills_alike(rand!, () -> zero(MVector{100,Float64}))
+        @test fills_alike(randn!, () -> zero(MMatrix{3,3,Float32,9}))
+        @test fills_alike(rand!, () -> Vector{SVector{3,Float32}}(undef, 40))
         @static if isdefined(Base, :Memory)
             @test fills_alike(rand!, () -> Memory{Float64}(undef, 60))
         end
@@ -164,14 +171,20 @@ using HeterogeneousComputing: _nonzero_xoshiro_state, _symbol_digest, _seeded_rn
     end
 
     @testset "contexts" begin
-        ctx = rootcontext(42)
+        ctx = GenContext(rootrng(42))
         @test ctx isa GenContext{Float64,CPUnit,KeyedRNG{Xoshiro}}
-        @test get_rng(ctx) == rootrng(42)
-        @test get_rng(rootcontext(CPUnit(), 42)) == rootrng(42)
-        @test get_rng(rootcontext(CPUDevice(), 42)) == rootrng(42)
-        @test get_rng(rootcontext(Xoshiro(7))) == rootrng(Xoshiro(7))
-        @test get_rng(rootcontext()) isa KeyedRNG{Xoshiro}
         @test has_rng_streamkey(get_rng(ctx))
+
+        # rootcontext keeps unit and precision and draws the key from the RNG
+        # of the context, which advances:
+        plain = GenContext{Float32}(Xoshiro(7))
+        root = @inferred(rootcontext(plain))
+        @test root isa GenContext{Float32,CPUnit,KeyedRNG{Xoshiro}}
+        @test get_rng(root) == rootrng(Xoshiro(7))
+        @test get_rng(plain) == (e = Xoshiro(7); rand(e, UInt32, 8); e)
+        @test get_rng(rootcontext(plain)) != get_rng(root)
+        @test get_rng(rootcontext(GenContext())) isa KeyedRNG{Xoshiro}
+        @test rng_streamkey(get_rng(rootcontext(ctx))) != rng_streamkey(get_rng(ctx))
         @test GenContext{Float32}(get_rng(ctx)) isa GenContext{Float32,CPUnit,KeyedRNG{Xoshiro}}
         @test get_compute_unit(get_rng(ctx)) === ComputeUnitIndependent()
 
@@ -182,14 +195,15 @@ using HeterogeneousComputing: _nonzero_xoshiro_state, _symbol_digest, _seeded_rn
         @test_throws ArgumentError subcontext(GenContext(), 1)
         @test adapt(CPUnit(), ctx) === ctx
 
-        @test rand(rootcontext(42), 3) == rand(rootcontext(42), 3) == rand(rootrng(42), 3)
+        @test rand(GenContext(rootrng(42)), 3) == rand(rootrng(42), 3)
         test_gencontext_draws(ctx)
         test_gencontext_draws(GenContext{Float32}(CPUnit(), subrng(rootrng(1), :x)))
     end
 
     @testset "JLArrays" begin
         jl_unit = AbstractComputeUnit(JLBackend())
-        ctx = rootcontext(42)
+        ctx = GenContext(rootrng(42))
+        jl_keyed() = GenContext(jl_unit, rootrng(jl_unit, 42))
 
         # Moving a context keeps the key and derives a leaf of the target's kind:
         jl_ctx = adapt(jl_unit, ctx)
@@ -223,16 +237,22 @@ using HeterogeneousComputing: _nonzero_xoshiro_state, _symbol_digest, _seeded_rn
 
         # A root created from a key restarts the stream of that key on the
         # unit, not a stream that adapt derived from draws:
-        restored = rootcontext(jl_unit, rng_streamkey(get_rng(jl_ctx)))
+        restored = GenContext(jl_unit, rootrng(jl_unit, rng_streamkey(get_rng(jl_ctx))))
         @test rng_streamkey(get_rng(restored)) == rng_streamkey(get_rng(jl_ctx))
-        @test Array(rand(restored, 3)) == Array(rand(rootcontext(jl_unit, 42), 3))
-        @test Array(rand(restored, 3)) != Array(rand(adapt(jl_unit, rootcontext(42)), 3))
+        @test Array(rand(restored, 3)) == Array(rand(jl_keyed(), 3))
+        @test Array(rand(restored, 3)) != Array(rand(adapt(jl_unit, GenContext(rootrng(42))), 3))
         @test rootrng(jl_root) isa KeyedRNG{<:GPUArrays.RNG{JLArray}}
         @test rootrng(jl_unit, jl_root.rng) isa KeyedRNG{<:GPUArrays.RNG{JLArray}}
-        @test Array(rand(rootcontext(jl_unit, 42), 5)) == Array(rand(rootcontext(jl_unit, 42), 5))
-        @test Array(rand(subcontext(rootcontext(jl_unit, 42), 1), 5)) !=
-              Array(rand(subcontext(rootcontext(jl_unit, 42), 2), 5))
-        test_gencontext_draws(subcontext(rootcontext(jl_unit, 42), 1))
+        @test Array(rand(jl_keyed(), 5)) == Array(rand(jl_keyed(), 5))
+        @test Array(rand(subcontext(jl_keyed(), 1), 5)) != Array(rand(subcontext(jl_keyed(), 2), 5))
+        test_gencontext_draws(subcontext(jl_keyed(), 1))
+
+        # rootcontext gives contexts on the unit a keyed RNG of the unit's kind:
+        @test get_rng(rootcontext(GenContext{Float32}(jl_unit))) isa KeyedRNG{<:GPUArrays.RNG{JLArray}}
+        from_host = rootcontext(GenContext{Float32}(jl_unit, Xoshiro(1)))
+        @test from_host isa GenContext{Float32,typeof(jl_unit),<:KeyedRNG{<:GPUArrays.RNG{JLArray}}}
+        @test rng_streamkey(get_rng(from_host)) == rng_streamkey(rootrng(jl_unit, Xoshiro(1)))
+        @test Array(rand(from_host, 3)) == Array(rand(rootrng(jl_unit, Xoshiro(1)), Float32, 3))
         test_gencontext_draws(GenContext{Float32}(jl_unit, subrng(jl_root, :x)))
     end
 end

@@ -70,13 +70,15 @@ The key of `proposal` depends only on the seed and on the ids along the way, so 
 
 Keyed RNGs are ordinary `AbstractRNG`s and work wherever an RNG is accepted. They wrap an RNG of the kind the compute unit uses for drawing numbers, so children derived on a GPU draw with the GPU's generator. The state of that generator is derived from the key, but on GPUs holds fewer bits than the key: 64 for the GPUArrays generator, 128 for Reactant. The streams of two distinct keys coincide with negligible probability, about 2^-256 on the CPU, 2^-64 and 2^-128 on those GPUs.
 
-[`rootcontext`](@ref) and [`subcontext`](@ref) do the same for a `GenContext`, and `adapt` keeps the key when a context moves to another compute unit:
+A `GenContext` takes a keyed RNG like any other RNG. [`rootcontext`](@ref) turns a context into one with a keyed RNG, whose key is drawn from the RNG of the context, [`subcontext`](@ref) derives child contexts, and `adapt` keeps the key when a context moves to another compute unit:
 
 ```julia
-ctx = rootcontext(gpu_unit, 42)
+ctx = rootcontext(GenContext{Float32}(gpu_unit))
 step_ctx = subcontext(ctx, :proposal, step)
 randn(step_ctx, (n, k))
 ```
+
+For a context whose key derives from a seed, use `GenContext{Float32}(gpu_unit, rootrng(gpu_unit, 42))`.
 
 On Reactant, keyed RNGs and contexts are created on the host and passed into compiled code, like other RNGs. Compiled code draws from the wrapped RNG and doesn't see the key, so RNGs can't be derived there, and an RNG that compiled code returns has no key.
 
