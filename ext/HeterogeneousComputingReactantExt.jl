@@ -200,6 +200,25 @@ function allocate_array(cunit::ReactantUnit, ::Type{T}, dims::Dims) where T
 end
 
 
+# Reactant can't return XLA clients from compiled code, which units hold.
+# Compiled code only runs on the unit it was compiled for, so units are
+# returned as constants, like Reactant returns XLA devices:
+function Reactant.Compiler.create_result(
+    tocopy::ReactantUnit,
+    @nospecialize(_path::Tuple),
+    _result_stores,
+    _path_to_shard_info,
+    _to_unreshard_results,
+    _unresharded_code::Vector{Expr},
+    _unresharded_arrays_cache,
+    _used_shardinfo,
+    _result_cache,
+    _var_idx,
+    _resultgen_code
+)
+    return Meta.quot(tocopy)
+end
+
 # Reactant compiles for the device of the arguments, or for the default
 # device of the client if the arguments don't have one:
 function HeterogeneousComputing.on_device(f, cunit::ReactantUnit, dummy_args::Vararg{Any,N}) where {N}

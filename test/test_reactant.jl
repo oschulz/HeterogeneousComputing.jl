@@ -75,6 +75,16 @@ Adapt.@adapt_structure _ReactantBox
     @test Array(r1[1]) != Array(r2[1])
     @test Array(r1[2]) != Array(r2[2])
 
+    # Units and contexts can be returned from compiled code. A returned
+    # context holds the advanced RNG state:
+    @test @jit(((u, x) -> (sum(x), u))(cunit, x))[2] == cunit
+    ctx_ret = GenContext{Float32}(cunit)
+    draw_ret = @compile ((ctx, x) -> (x .+ rand(ctx, size(x)), ctx))(ctx_ret, x)
+    y_ret, ctx_out = draw_ret(ctx_ret, x)
+    @test ctx_out isa GenContext{Float32} && get_compute_unit(ctx_out) == cunit
+    @test Array(get_rng(ctx_out).seed) == Array(get_rng(ctx_ret).seed)
+    @test Array(draw_ret(ctx_out, x)[1]) != Array(y_ret)
+
     # RNGs must be passed into compiled code, draws only happen there:
     @test_throws ArgumentError @jit((x -> randn(GenContext{Float32}(get_compute_unit(x)), 3))(x))
     @test_throws ArgumentError rand(ctx, 3)
@@ -180,9 +190,10 @@ Adapt.@adapt_structure _ReactantBox
         boxed_draw = on_device(b -> randn(b.value[1], 3), cunit, _ReactantBox((child, 1)))
         @test boxed_draw(_ReactantBox((child, 1))) isa Reactant.ConcreteRArray{Float32,1}
 
-        # Compiled code doesn't see keys, RNGs it returns have none:
-        returned = @jit(((ctx, x) -> (rand(ctx, 2), get_rng(ctx)))(child, x))
+        # Compiled code doesn't see keys, RNGs and contexts it returns have none:
+        returned = @jit(((ctx, x) -> (rand(ctx, 2), get_rng(ctx), ctx))(child, x))
         @test !has_rng_streamkey(returned[2]) && has_rng_streamkey(get_rng(child))
+        @test returned[3] isa GenContext{Float32} && !has_rng_streamkey(get_rng(returned[3]))
         @test_throws ArgumentError @jit(((ctx, x) -> randn(subcontext(ctx, 1), size(x)))(child, x))
         # Like other Reactant RNGs, keyed ones can't be created within compiled code:
         @test_throws ArgumentError @jit((x -> randn(GenContext{Float32}(cunit, rootrng(cunit, 1)), size(x)))(x))
