@@ -197,6 +197,7 @@ end
 Random.rng_native_52(rng::KeyedRNG) = Random.rng_native_52(rng.rng)
 Random.seed!(rng::KeyedRNG) = (Random.seed!(rng.rng); rng)
 Random.seed!(rng::KeyedRNG, seed) = (Random.seed!(rng.rng, seed); rng)
+Random.seed!(rng::KeyedRNG, ::Nothing) = Random.seed!(rng)
 
 for S in (
     (Random.SamplerType{T} for T in _NativeIntegers)...,

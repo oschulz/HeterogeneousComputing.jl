@@ -32,5 +32,7 @@ using HeterogeneousComputing: _threefry4x64
     @test all(_threefry4x64(flip(key, i, b), ctr) != ref for i in 1:4, b in (0, 31, 63))
     @test all(_threefry4x64(key, flip(ctr, i, b)) != ref for i in 1:4, b in (0, 31, 63))
     @test @inferred(_threefry4x64(key, ctr)) isa NTuple{4,UInt64}
-    @test @allocated(_threefry4x64(key, ctr)) == 0
+    allocations(key, ctr) = @allocated(_threefry4x64(key, ctr))
+    allocations(key, ctr)
+    @test allocations(key, ctr) == 0
 end

@@ -155,6 +155,9 @@ using HeterogeneousComputing: _nonzero_xoshiro_state, _symbol_digest, _seeded_rn
         @test rng_streamkey(a) == rng_streamkey(r) && a.rng == Xoshiro(1)
         Random.seed!(a)
         @test rng_streamkey(a) == rng_streamkey(r) && a.rng != Xoshiro(1)
+        Random.seed!(a, 1)
+        Random.seed!(a, nothing)
+        @test rng_streamkey(a) == rng_streamkey(r) && a.rng != Xoshiro(1)
 
         @test copy(r) == r && copy(r) !== r && copy(r).rng !== r.rng
         @test deepcopy(r) == r
@@ -229,8 +232,11 @@ using HeterogeneousComputing: _nonzero_xoshiro_state, _symbol_digest, _seeded_rn
         @test size(rand(jl_root, 2, 3)) == (2, 3) && rand(jl_root, 2, 3) isa JLArray
         @test randn(jl_root, 4) isa JLArray
         @test rand(jl_root, Char, 5) isa JLArray{Char,1}
-        @test rand(jl_root, Tuple{Float32,Float32}, 5) isa JLArray{Tuple{Float32,Float32},1}
-        @test rand(jl_root, Pair{Float32,Float32}, (2, 3)) isa JLArray{Pair{Float32,Float32},2}
+        # Random draws tuples and pairs since Julia v1.11:
+        if VERSION >= v"1.11"
+            @test rand(jl_root, Tuple{Float32,Float32}, 5) isa JLArray{Tuple{Float32,Float32},1}
+            @test rand(jl_root, Pair{Float32,Float32}, (2, 3)) isa JLArray{Pair{Float32,Float32},2}
+        end
         @test Array(rand(rootrng(jl_unit, 42), Float32, 5)) == Array(rand(rootrng(jl_unit, 42).rng, Float32, 5))
         @test Array(randn(rootrng(jl_unit, 42), Float32, (2, 2))) ==
               Array(randn(rootrng(jl_unit, 42).rng, Float32, (2, 2)))
