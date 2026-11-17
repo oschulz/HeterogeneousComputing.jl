@@ -224,6 +224,14 @@ using HeterogeneousComputing: _nonzero_xoshiro_state, _symbol_digest, _seeded_rn
 
         jl_root = rootrng(jl_unit, 42)
         @test jl_root isa KeyedRNG{<:GPUArrays.RNG{JLArray}}
+
+        # Keyed RNGs on the unit can be copied and compared:
+        @test rootrng(jl_unit, 42) == jl_root && hash(rootrng(jl_unit, 42)) == hash(jl_root)
+        @test rootrng(jl_unit, 43) != jl_root
+        jl_copy = copy(jl_root)
+        @test jl_copy == jl_root && jl_copy.rng !== jl_root.rng
+        rand(jl_copy, Float32, 3)
+        @test jl_copy != jl_root
         @test rng_streamkey(jl_root) == rng_streamkey(rootrng(42))
         @test rng_streamkey(adapt(jl_unit, rootrng(42))) == rng_streamkey(rootrng(42))
 

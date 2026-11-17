@@ -115,9 +115,15 @@ rng_streamkey(rng::KeyedRNG) = rng.streamkey
 # Moving a keyed RNG moves the wrapped RNG, the key stays:
 Adapt.adapt_structure(to, rng::KeyedRNG) = KeyedRNG(adapt(to, rng.rng), rng.streamkey)
 
-Base.copy(rng::KeyedRNG) = KeyedRNG(copy(rng.rng), rng.streamkey)
-Base.:(==)(a::KeyedRNG, b::KeyedRNG) = a.streamkey == b.streamkey && a.rng == b.rng
-Base.hash(rng::KeyedRNG, h::UInt) = hash(rng.rng, hash(rng.streamkey, hash(:KeyedRNG, h)))
+# Wrapped RNGs are copied, compared and hashed through these functions, so
+# extensions can support RNG types that can't do that themselves:
+_copy_rng(rng::AbstractRNG) = copy(rng)
+_isequal_rng(a::AbstractRNG, b::AbstractRNG) = a == b
+_hash_rng(rng::AbstractRNG, h::UInt) = hash(rng, h)
+
+Base.copy(rng::KeyedRNG) = KeyedRNG(_copy_rng(rng.rng), rng.streamkey)
+Base.:(==)(a::KeyedRNG, b::KeyedRNG) = a.streamkey == b.streamkey && _isequal_rng(a.rng, b.rng)
+Base.hash(rng::KeyedRNG, h::UInt) = _hash_rng(rng.rng, hash(rng.streamkey, hash(:KeyedRNG, h)))
 
 function Base.show(io::IO, rng::KeyedRNG)
     return print(io, "KeyedRNG(", rng.rng, ", streamkey = ", rng.streamkey, ")")
