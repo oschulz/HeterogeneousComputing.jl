@@ -232,6 +232,11 @@ using HeterogeneousComputing: _nonzero_xoshiro_state, _symbol_digest, _seeded_rn
         @test jl_copy == jl_root && jl_copy.rng !== jl_root.rng
         rand(jl_copy, Float32, 3)
         @test jl_copy != jl_root
+
+        # The state of the wrapped RNG depends on more than one word of its seeds:
+        seeded(seeds...) = HeterogeneousComputing._seeded_rng(jl_unit, UInt64.(seeds))
+        @test Array(rand(seeded(1, 2, 3, 4), Float32, 4)) != Array(rand(seeded(9, 2, 3, 4), Float32, 4))
+        @test Array(rand(seeded(1, 2, 3, 4), Float32, 4)) != Array(rand(seeded(1, 9, 3, 4), Float32, 4))
         @test rng_streamkey(jl_root) == rng_streamkey(rootrng(42))
         @test rng_streamkey(adapt(jl_unit, rootrng(42))) == rng_streamkey(rootrng(42))
 

@@ -46,7 +46,7 @@ ka_backend(::CUDAUnit) = CUDA.CUDABackend()
 # GPUArrays RNG instead (the default RNG on CUDA v6):
 @static if pkgversion(CUDA) < v"6"
     function _seeded_rng_like(::CUDA.RNG, ::AbstractComputeUnit, seeds::NTuple{4,UInt64})
-        return CUDA.GPUArrays.RNG{CUDA.CuArray}(seeds[1])
+        return CUDA.GPUArrays.RNG{CUDA.CuArray}(seeds[1], seeds[2])
     end
 end
 
