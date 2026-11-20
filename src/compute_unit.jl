@@ -289,6 +289,10 @@ _same_device(a::AbstractDevice, b::AbstractDevice) = a == b
     const CPUnit = DeviceUnit{MLDataDevices.CPUDevice{Nothing}}
 
 `CPUnit()` is the default central processing unit (CPU).
+
+Adapting a host `Array` to `CPUnit()` keeps the array and its elements by
+identity. Use `map(adapt(CPUnit()), arrays)` to transfer each device array
+held in a host array.
 """
 const CPUnit = DeviceUnit{CPUDevice{Nothing}}
 export CPUnit
@@ -298,6 +302,10 @@ export CPUnit
 Base.show(io::IO, ::CPUnit) = print(io, "CPUnit()")
 
 is_host_unit(::CPUnit) = true
+
+Adapt.adapt_storage(::CPUnit, A::Array) = A
+# MLDataDevices can classify an unfamiliar GPU array by its host parent.
+Adapt.adapt_storage(::CPUnit, A::GPUArraysCore.AbstractGPUArray) = Array(A)
 
 get_total_memory(::CPUnit) = Sys.total_memory()
 get_free_memory(::CPUnit) = Sys.free_memory()

@@ -5,6 +5,7 @@ using Test
 
 using ArraysOfArrays, FillArrays, StructArrays
 using Adapt
+import GPUArraysCore
 using KernelAbstractions
 using MLDataDevices: CPUDevice, MetalDevice, cpu_device, get_device, default_device_rng
 using JLArrays
@@ -44,6 +45,13 @@ mutable struct _LinkedRNG <: AbstractRNG
     link::Any
 end
 
+struct _HostBackedGPUArray{T} <: GPUArraysCore.AbstractGPUArray{T,1}
+    storage::Vector{T}
+end
+Base.size(A::_HostBackedGPUArray) = size(A.storage)
+Base.parent(A::_HostBackedGPUArray) = A.storage
+Base.Array(A::_HostBackedGPUArray) = copy(A.storage)
+
 
 @testset "compute_unit" begin
     @testset "CPUnit" begin
@@ -61,6 +69,37 @@ end
         test_cunit(CPUnit())
         @test @inferred(KernelAbstractions.Backend(CPUnit())) isa KernelAbstractions.CPU
         @test @inferred(convert(KernelAbstractions.Backend, CPUnit())) isa KernelAbstractions.CPU
+    end
+
+    @testset "CPU storage adaptation" begin
+        strings = fill("sample", 200_000)
+        @test adapt(CPUnit(), strings) === strings
+        allocations(xs) = @allocated adapt(CPUnit(), xs)
+        @test allocations(strings) == 0
+        uninitialized = Vector{Any}(undef, 3)
+        @test adapt(CPUnit(), uninitialized) === uninitialized
+
+        cycle = Any[nothing]
+        cycle[1] = cycle
+        left, right = adapt(CPUnit(), (cycle, cycle))
+        @test left === right === cycle
+        @test left[1] === left
+
+        external = _HostBackedGPUArray(Float32[1, 2])
+        @test get_device(external) isa CPUDevice
+        host = adapt(CPUnit(), external)
+        @test host isa Vector{Float32}
+        @test host == Float32[1, 2]
+
+        child = JLArray(Float32[3, 4])
+        for outer in ([child, child], Any[child, child])
+            @test get_compute_unit(outer) === CPUnit()
+            @test adapt(CPUnit(), outer) === outer
+            @test outer[1] === outer[2] === child
+            host_children = map(adapt(CPUnit()), outer)
+            @test all(x -> x isa Vector{Float32}, host_children)
+            @test host_children == [Float32[3, 4], Float32[3, 4]]
+        end
     end
 
     @testset "JLArrays" begin

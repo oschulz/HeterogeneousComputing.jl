@@ -36,9 +36,6 @@ HeterogeneousComputing.AbstractComputeUnit(::JLBackend) = DeviceUnit(JLArraysDev
 get_compute_unit_impl(::JLArray) = DeviceUnit(JLArraysDevice())
 get_compute_unit_impl(::GPUArrays.RNG{JLArray}) = DeviceUnit(JLArraysDevice())
 
-# MLDataDevices considers JLArrays to be CPU arrays:
-Adapt.adapt_storage(::CPUnit, A::JLArray) = Array(A)
-
 get_total_memory(::JLArraysUnit) = Sys.total_memory()
 get_free_memory(::JLArraysUnit) = Sys.free_memory()
 
