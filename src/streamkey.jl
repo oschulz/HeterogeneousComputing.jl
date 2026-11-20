@@ -43,7 +43,7 @@ end
 Derive a child RNG from the keyed RNG `rng`, identified by `id` and further
 `ids`.
 
-Ids are integers in `0:typemax(UInt64)` or symbols. The stream key of the
+Ids are symbols or integers in `0:typemax(UInt64)`, excluding `Bool`. The stream key of the
 child depends only on the key of `rng` and the ids, not on the numbers drawn
 from `rng` before, and deriving a child doesn't advance `rng`. Several ids
 derive step by step, so `subrng(rng, :walker, 3)` equals
@@ -73,7 +73,7 @@ Create a keyed RNG on compute unit `cunit`, the root of a tree of RNGs
 derived with [`subrng`](@ref).
 
 The stream key of the root is derived from the integer `seed` (in
-`0:typemax(UInt64)`), drawn from the RNG `entropy`, which advances, or drawn
+`0:typemax(UInt64)`, excluding `Bool`), drawn from the RNG `entropy`, which advances, or drawn
 from the default RNG of `cunit` if neither is given. `cunit` defaults to
 `CPUnit()`, or to the compute unit of `entropy`.
 
