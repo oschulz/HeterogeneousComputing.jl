@@ -56,6 +56,19 @@ the destination fails after receiving the seed.
 
 [`rootcontext`](@ref) turns a context into one with a keyed RNG,
 [`subcontext`](@ref) derives child contexts from it.
+
+Each task should own its mutable RNG when moving contexts. [`on_device`](@ref)
+can draw from the source RNG while adapting its arguments, before the callback
+runs. Each replicate id gives its task a reproducible stream on `cunit`.
+
+```julia
+root = GenContext{Float32}(rootrng(42))
+draw = on_device(ctx -> rand(ctx, 12), cunit, root)
+tasks = map(1:8) do id
+    Threads.@spawn draw(subcontext(root, :replicate, id))
+end
+fetch.(tasks)
+```
 """
 struct GenContext{T<:AbstractFloat,CU<:AbstractComputeUnit,RNG<:AbstractRNG}
     cunit::CU
