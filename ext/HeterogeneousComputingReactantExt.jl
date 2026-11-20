@@ -223,8 +223,16 @@ const _ConcreteFloat = Reactant.AbstractConcreteNumber{<:AbstractFloat}
 _gen_convert(::Type{T}, x::_ConcreteFloat) where T = convert(T, x)
 
 # Reactant's fill! converts the scalar in the destination element type.
+function _fill_concrete_number(cunit, ::Type{T}, x, dims) where T
+    return fill!(allocate_array(cunit, T, dims), adapt(cunit, x))
+end
+
+function HeterogeneousComputing.fill_array(cunit::ReactantUnit, x::_ConcreteNumbers, dims::Dims)
+    return _fill_concrete_number(cunit, Reactant.unwrapped_eltype(x), x, dims)
+end
+
 function HeterogeneousComputing.fill_array(ctx::GenContext{T,<:ReactantUnit}, x::_ConcreteFloat, dims::Dims) where T
-    return fill!(allocate_array(ctx, dims), x)
+    return _fill_concrete_number(get_compute_unit(ctx), T, x, dims)
 end
 
 function allocate_array(cunit::ReactantUnit, ::Type{T}, dims::Dims) where T
