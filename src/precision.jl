@@ -38,8 +38,13 @@ Returns the numerical precision associated with type `T` or
 [`NoPrecision{T}`](@ref) if no numerical precision can be determined for type
 `T`.
 
-Concrete types derive their precision from their field types, abstract types
-have no precision.
+The generic rule combines the field precisions of concrete types and returns
+`NoPrecision{T}` for abstract types. Array types use their element precision.
+
+```jldoctest
+julia> get_precision_fromtype(AbstractVector{Float32})
+Float32
+```
 """
 function get_precision_fromtype end
 export get_precision_fromtype
