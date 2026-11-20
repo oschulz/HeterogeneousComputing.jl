@@ -17,6 +17,7 @@ JLArrays = "27aeb0d3-9eb9-45fb-866b-73c2ecf80fcb"
 KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
 OpenCL = "08131aa3-fb12-5dee-8b74-c09406e224a2"
 Reactant = "3c362404-f566-11ee-1572-e11a4b42c853"
+RecursiveArrayTools = "731186ca-8d62-57ce-b412-fbd966d074cd"
 
 [extensions]
 HeterogeneousComputingAMDGPUExt = ["AMDGPU", "GPUArrays"]
@@ -26,6 +27,7 @@ HeterogeneousComputingJLArraysExt = ["JLArrays", "GPUArrays"]
 HeterogeneousComputingKernelAbstractionsExt = "KernelAbstractions"
 HeterogeneousComputingOpenCLExt = "OpenCL"
 HeterogeneousComputingReactantExt = "Reactant"
+HeterogeneousComputingRecursiveArrayToolsExt = "RecursiveArrayTools"
 
 [compat]
 AMDGPU = "2.2"
@@ -39,5 +41,6 @@ MLDataDevices = "1.17.7"
 OpenCL = "0.10.2, 1"
 Random = "1"
 Reactant = "0.2.203"
+RecursiveArrayTools = "3.8, 4"
 SHA = "0.7, 1"
 julia = "1.10"

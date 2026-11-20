@@ -244,7 +244,10 @@ types, these are policies for moving data, not properties of a compute unit.
 Throws an `ArgumentError` if the package that provides the device isn't
 loaded.
 
-`MLDataDevices.get_device(cunit)` returns the device.
+`MLDataDevices.get_device(cunit)` returns the device. If a container defines
+both a generic `Adapt.adapt_structure` method and one for devices, it can
+select the device method for units with
+`Adapt.adapt_structure(u::DeviceUnit, x::MyContainer) = Adapt.adapt_storage(u, x)`.
 """
 struct DeviceUnit{D<:AbstractDevice} <: AbstractComputeUnit
     device::D

@@ -13,7 +13,8 @@ Test.@testset "Package ambiguities" begin
             Base.get_extension(HeterogeneousComputing, name) for name in (
                 :HeterogeneousComputingCUDAExt, :HeterogeneousComputingAMDGPUExt,
                 :HeterogeneousComputingGPUArraysExt, :HeterogeneousComputingJLArraysExt,
-                :HeterogeneousComputingKernelAbstractionsExt, :HeterogeneousComputingReactantExt
+                :HeterogeneousComputingKernelAbstractionsExt, :HeterogeneousComputingReactantExt,
+                :HeterogeneousComputingRecursiveArrayToolsExt
             )
         ]
     )

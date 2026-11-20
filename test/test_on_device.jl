@@ -6,6 +6,7 @@ using Test
 import Adapt
 using MLDataDevices: AbstractDevice, CPUDevice, get_device
 using JLArrays: JLArray, JLBackend
+using RecursiveArrayTools: DiffEqArray
 
 struct _DeviceBox{A}
     data::A
@@ -45,6 +46,12 @@ Adapt.adapt_structure(dev::AbstractDevice, x::_DeviceBox) = _DeviceBox(Adapt.ada
     unit = AbstractComputeUnit(JLBackend())
     for target in (unit, get_device(unit))
         @test on_device(b -> b.data isa JLArray{Float64}, target, box)(box)
+    end
+    trajectory = DiffEqArray([Float16[3, 4], Float16[5, 6]], Float16[1, 2])
+    @test Adapt.adapt(unit, trajectory).t === trajectory.t
+    placement(v) = (first(v.u) isa JLArray{Float16}, v.t isa Vector{Float16})
+    for target in (unit, get_device(unit))
+        @test on_device(placement, target, trajectory)(trajectory) == (true, true)
     end
     # Contexts are arguments on their compute unit as well:
     ctx = GenContext{Float32}()
