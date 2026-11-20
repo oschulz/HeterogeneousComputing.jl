@@ -88,6 +88,12 @@ using Adapt: adapt
             @test any(>(8), E)
         end
 
+        rng = rootrng(jl_unit, 42)
+        initial_rng = copy(rng)
+        flags = JLArray(fill(true, 8))
+        @test_throws ArgumentError randexp!(GenContext(jl_unit, rng), flags)
+        @test all(Array(flags)) && rng == initial_rng
+
         # Host RNGs stay with contexts moved to host units, otherwise a new
         # RNG native to the target unit is derived, reproducibly, and the
         # original RNG advances:

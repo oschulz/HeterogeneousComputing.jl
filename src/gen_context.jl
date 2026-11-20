@@ -207,6 +207,7 @@ _fill_random!(f!::F, rng::AbstractRNG, A::AbstractArray) where {F} = _fill_rando
 _fill_random_array!(f!::F, rng::AbstractRNG, A::AbstractArray) where {F} = f!(rng, A)
 # GPU RNGs provide no exponential variates:
 function _fill_random_array!(::typeof(Random.randexp!), rng::AbstractRNG, A::GPUArraysCore.AnyGPUArray)
+    eltype(A) <: AbstractFloat || throw(ArgumentError("Exponential draws require a floating-point destination"))
     return _randexp_from_rand!(rng, A)
 end
 
