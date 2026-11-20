@@ -8,6 +8,7 @@ import HeterogeneousComputing: get_compute_unit_impl, get_precision_fromtype, al
 import HeterogeneousComputing:
     _canonical_device, _same_device, _fill_random!, _draw_scalar, _scalar_randfun, _RecurseFields, _gen_convert
 import HeterogeneousComputing: _draw_seeds, _seeded_rng, _seeded_rng_like, _with_seed_draw
+import HeterogeneousComputing: _isequal_rng, _hash_rng
 
 import Reactant
 using Reactant: ConcreteRArray, TracedRArray, TracedRNumber, ReactantRNG, within_compile
@@ -143,6 +144,11 @@ end
 _seeded_rng_like(::ReactantRNG, cunit::AbstractComputeUnit, seeds::NTuple{4,UInt64}) = _seeded_rng(cunit, seeds)
 
 const _ConcreteRNG = ReactantRNG{<:Reactant.AbstractConcreteArray}
+
+function _isequal_rng(a::_ConcreteRNG, b::_ConcreteRNG)
+    return a === b || (a.algorithm == b.algorithm && Array(a.seed) == Array(b.seed))
+end
+_hash_rng(rng::_ConcreteRNG, h::UInt) = hash(Array(rng.seed), hash(rng.algorithm, h))
 
 # Reactant RNGs can't draw outside of compiled code, so new seeds and a new
 # state are derived from the current state instead:

@@ -230,8 +230,13 @@ Adapt.@adapt_structure _ReactantBox
 
         # Bare keyed RNGs, on_device and user structs work alike:
         krng = get_rng(child)
+        copied_rng = copy(krng)
+        @test isequal(krng, copied_rng) && hash(krng) == hash(copied_rng)
         draw = @compile ((r, x) -> x .+ rand(r, Float32, size(x)))(krng, x)
-        @test Array(draw(krng, x)) != Array(draw(krng, x))
+        first_draw = Array(draw(krng, x))
+        @test krng != copied_rng
+        @test Array(draw(copied_rng, x)) == first_draw && krng == copied_rng
+        @test first_draw != Array(draw(krng, x))
         h_on_device = on_device(h, cunit, child, x)
         @test Array(h_on_device(child, x)) != Array(h_on_device(child, x))
         boxed_draw = on_device(b -> randn(b.value[1], 3), cunit, _ReactantBox((child, 1)))
