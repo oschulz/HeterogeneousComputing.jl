@@ -1,11 +1,14 @@
 # This file is a part of HeterogeneousComputing.jl, licensed under the MIT License (MIT).
 
 # CUDA tests, not part of the default test suite (they need a CUDA GPU).
-# Run with `julia --project=test/cuda test/cuda/runtests.jl` after
-# instantiating that project.
+# From the repository root, develop this checkout into the CUDA test project:
+#   julia --project=test/cuda -e 'using Pkg; Pkg.develop(path=pwd()); Pkg.instantiate()'
+#   julia --project=test/cuda test/cuda/runtests.jl
 
 using HeterogeneousComputing
 using Test
+
+@test realpath(pkgdir(HeterogeneousComputing)) == realpath(joinpath(@__DIR__, "..", ".."))
 
 using CUDA
 using KernelAbstractions
