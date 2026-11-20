@@ -81,6 +81,13 @@ using Adapt: adapt
         @test randexp!(jl_ctx, view(A, 1:2:5)) isa SubArray
         @test all(x -> 0 <= x < Inf, Array(A)[1:2:5])
 
+        # A rounded unit exponential has P(X = 0) ≈ 2^-25 and P(X > 8) ≈ exp(-8).
+        for rng in (rootrng(jl_unit, 19), Xoshiro(19))
+            E = Array(randexp(GenContext{Float16}(jl_unit, rng), 2^16))
+            @test count(iszero, E) <= 2
+            @test any(>(8), E)
+        end
+
         # Host RNGs stay with contexts moved to host units, otherwise a new
         # RNG native to the target unit is derived, reproducibly, and the
         # original RNG advances:

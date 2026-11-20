@@ -228,6 +228,18 @@ _scalar_randfun(::typeof(Random.randexp!)) = Random.randexp
 _randexp_from_rand!(rng::AbstractRNG, A::AbstractArray) = (A .= _neglog_uniform.(Random.rand!(rng, A)))
 @inline _neglog_uniform(u::Real) = -log(ifelse(iszero(u), one(u), u))
 
+function _randexp_from_rand!(rng::AbstractRNG, A::AbstractArray{Float16})
+    bits = Random.rand!(rng, similar(A, UInt32))
+    return A .= _float16_randexp.(bits)
+end
+
+# Use the midpoints of 2^32 uniform bins. Measuring from the nearer endpoint
+# keeps both tails in range on devices that only support Float32 arithmetic.
+@inline function _float16_randexp(bits::UInt32)
+    u = (Float32(min(bits, ~bits)) + 0.5f0) * Float32(0x1p-32)
+    return Float16(bits < 0x80000000 ? -log1p(-u) : -log(u))
+end
+
 
 """
     allocate_array(ctx::GenContext, dims::Dims)
