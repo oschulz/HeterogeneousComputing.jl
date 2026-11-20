@@ -127,7 +127,7 @@ function _allocation_device(cunit::_IFRTSingleUnit)
     return MLDataDevices.with_eltype(ReactantDevice(dev.client, dev.device, _IFRTPlacement(dev.device)), nothing)
 end
 
-Adapt.adapt_storage(cunit::ReactantUnit, x) = Adapt.adapt_storage(_allocation_device(cunit), x)
+Adapt.adapt_storage(cunit::ReactantUnit, x) = adapt(_allocation_device(cunit), x)
 
 # A new RNG created within compiled code would have a fixed seed:
 function MLDataDevices.default_device_rng(cunit::ReactantUnit)

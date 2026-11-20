@@ -3,8 +3,14 @@
 using HeterogeneousComputing
 using Test
 
-using MLDataDevices: CPUDevice
+import Adapt
+using MLDataDevices: AbstractDevice, CPUDevice, get_device
 using JLArrays: JLArray, JLBackend
+
+struct _DeviceBox{A}
+    data::A
+end
+Adapt.adapt_structure(dev::AbstractDevice, x::_DeviceBox) = _DeviceBox(Adapt.adapt(dev, x.data))
 
 @testset "test_on_device" begin
     f(x, y) = sum(x .* y)
@@ -35,6 +41,11 @@ using JLArrays: JLArray, JLBackend
     # Results are adapted back to the compute unit of the arguments:
     jl_f = on_device((x, y) -> x .* y, AbstractComputeUnit(JLBackend()), dummy_x, dummy_y)
     @test jl_f(x, y) isa Vector{Float32} && jl_f(x, y) ≈ x .* y
+    box = _DeviceBox(Float64[1, 2])
+    unit = AbstractComputeUnit(JLBackend())
+    for target in (unit, get_device(unit))
+        @test on_device(b -> b.data isa JLArray{Float64}, target, box)(box)
+    end
     # Contexts are arguments on their compute unit as well:
     ctx = GenContext{Float32}()
     jl_rand = on_device(c -> rand(c, 3), AbstractComputeUnit(JLBackend()), ctx)
