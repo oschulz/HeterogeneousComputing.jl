@@ -256,9 +256,6 @@ function _child_streamkey(::NTuple{4,UInt64}, @nospecialize(id))
     return throw(ArgumentError("Stream ids must be integers or symbols, got a $(typeof(id))"))
 end
 
-_path_streamkey(key::NTuple{4,UInt64}) = key
-_path_streamkey(key::NTuple{4,UInt64}, id, ids...) = _path_streamkey(_child_streamkey(key, id), ids...)
-
 function _checked_streamid(id::Integer)
     id isa Bool && throw(ArgumentError("Stream ids must be integers or symbols, got a Bool"))
     0 <= id <= typemax(UInt64) || throw(ArgumentError("Integer stream ids must be in 0:typemax(UInt64), got $id"))
@@ -286,8 +283,8 @@ end
 _leaf_seeds(key::NTuple{4,UInt64}) = _derive_streamkey(key, (_STREAMKEY_LEAF, UInt64(0), UInt64(0), UInt64(0)))
 
 
-function subrng(rng::KeyedRNG, id, ids...)
-    key = _path_streamkey(rng.streamkey, id, ids...)
+function subrng(rng::KeyedRNG, id, ids::Vararg{Any,N}) where N
+    key = foldl(_child_streamkey, ids; init = _child_streamkey(rng.streamkey, id))
     home = _rng_home(get_compute_unit(rng.rng), CPUnit())
     leaf = _within_unit(() -> _seeded_rng_like(rng.rng, home, _leaf_seeds(key)), home)
     return KeyedRNG(leaf, key)
