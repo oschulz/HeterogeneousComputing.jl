@@ -165,6 +165,10 @@ end
 
 const _NativeIntegers = (Bool, Int8, UInt8, Int16, UInt16, Int32, UInt32, Int64, UInt64, Int128, UInt128)
 const _NativeFloats = (Float16, Float32, Float64)
+const _BulkSamplerTypes = (
+    (Random.SamplerType{T} for T in _NativeIntegers)...,
+    (Random.SamplerTrivial{Random.CloseOpen01{T}} for T in _NativeFloats)...
+)
 
 for f! in (:rand!, :randn!, :randexp!)
     @eval function Random.$f!(rng::KeyedRNG, A::_DenseHostArray)
@@ -175,10 +179,7 @@ function Random.rand!(rng::KeyedRNG, A::_DenseHostArray, ::Type{X}) where {X}
     return _keyed_draw(Random.rand!, rng, A, X)
 end
 # Fills with the samplers that Xoshiro implements in bulk:
-for S in (
-    (Random.SamplerType{T} for T in _NativeIntegers)...,
-    (Random.SamplerTrivial{Random.CloseOpen01{T}} for T in _NativeFloats)...
-)
+for S in _BulkSamplerTypes
     @eval function Random.rand!(rng::KeyedRNG, A::_DenseHostArray, sp::$S)
         return _keyed_draw(Random.rand!, rng, A, sp)
     end
@@ -227,8 +228,7 @@ Random.seed!(rng::KeyedRNG, seed) = (Random.seed!(rng.rng, seed); rng)
 Random.seed!(rng::KeyedRNG, ::Nothing) = Random.seed!(rng)
 
 for S in (
-    (Random.SamplerType{T} for T in _NativeIntegers)...,
-    (Random.SamplerTrivial{Random.CloseOpen01{T}} for T in _NativeFloats)...,
+    _BulkSamplerTypes...,
     Random.SamplerTrivial{Random.UInt52Raw{UInt64}}, Random.SamplerTrivial{Random.UInt52{UInt64}},
     Random.SamplerTrivial{Random.UInt104{UInt128}}
 )
