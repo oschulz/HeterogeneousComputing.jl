@@ -231,7 +231,7 @@ for (randfun, randfun!) in ((:rand, :rand!), (:randn, :randn!), (:randexp, :rand
         Random.$randfun(ctx::GenContext{T}) where T =
             _within_unit(() -> _draw_scalar(Random.$randfun!, ctx.rng, T, ctx.cunit), ctx.cunit)
         Random.$randfun(ctx::GenContext{T}, dims::Dims) where T = Random.$randfun!(ctx, allocate_array(ctx, dims))
-        Random.$randfun(ctx::GenContext, dim1::Integer, dims::Integer...) = Random.$randfun(ctx, (dim1, dims...))
+        Random.$randfun(ctx::GenContext, dim1::Integer, dims::Integer...) = Random.$randfun(ctx, Dims((dim1, dims...)))
         Random.$randfun!(ctx::GenContext, A::AbstractArray) =
             _within_unit(() -> _fill_random!(Random.$randfun!, ctx.rng, A), ctx.cunit)
     end
@@ -298,9 +298,9 @@ numerical element type specified by `ctx`.
 The default element type can be overriden by specifying `T`.
 """
 @inline allocate_array(ctx::GenContext{T}, dims::Dims) where T = allocate_array(ctx.cunit, T, dims)
-@inline allocate_array(ctx::GenContext, dims::Integer...) = allocate_array(ctx, dims)
+@inline allocate_array(ctx::GenContext, dims::Integer...) = allocate_array(ctx, Dims(dims))
 @inline allocate_array(ctx::GenContext, ::Type{T}, args...) where T = allocate_array(ctx.cunit, T, args...)
-@inline allocate_array(ctx::GenContext, ::Type{T}, dims::Integer...) where T = allocate_array(ctx, T, dims)
+@inline allocate_array(ctx::GenContext, ::Type{T}, dims::Integer...) where T = allocate_array(ctx, T, Dims(dims))
 
 
 """
@@ -312,7 +312,7 @@ Create an array of size `dims` on the compute unit of `ctx`, filled with `x`.
 Floating point values are converted to the precision of `ctx`.
 """
 @inline fill_array(ctx::GenContext{T}, x, dims::Dims) where T = fill_array(ctx.cunit, _gen_convert(T, x), dims)
-@inline fill_array(ctx::GenContext, x, dims::Integer...) = fill_array(ctx, x, dims)
+@inline fill_array(ctx::GenContext, x, dims::Integer...) = fill_array(ctx, x, Dims(dims))
 
 _gen_convert(::Type{T}, x::AbstractFloat) where T = convert(T, x)
 _gen_convert(::Type, x) = x

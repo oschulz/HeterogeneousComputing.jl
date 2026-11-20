@@ -57,9 +57,9 @@ function test_cunit(cunit::AbstractComputeUnit)
         A = @inferred(allocate_array(cunit, Float32, (4, 5)))
         @test eltype(A) == Float32 && size(A) == (4, 5)
         @test get_compute_unit(A) == cunit
-        @test typeof(@inferred(allocate_array(cunit, Float32, 4, 5))) == typeof(A)
+        @test typeof(@inferred(allocate_array(cunit, Float32, Int32(4), 5))) == typeof(A)
 
-        B = @inferred(fill_array(cunit, 4.2, 2, 3))
+        B = @inferred(fill_array(cunit, 4.2, Int32(2), 3))
         @test get_compute_unit(B) == cunit
         @test _on_host(B) == fill(4.2, 2, 3)
 
@@ -85,7 +85,7 @@ function test_gencontext_draws(ctx::GenContext{T}) where T
             A = @inferred(randfun(ctx, (4, 5)))
             @test A isa AbstractArray{T,2} && size(A) == (4, 5)
             @test get_compute_unit(A) == cunit
-            @test typeof(@inferred(randfun(ctx, 4, 5))) == typeof(A)
+            @test typeof(@inferred(randfun(ctx, UInt8(4), 5))) == typeof(A)
             @test @inferred(randfun!(ctx, A)) === A
         end
 

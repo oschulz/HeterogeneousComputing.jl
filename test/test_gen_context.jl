@@ -81,7 +81,8 @@ end
     _check_array(@inferred(allocate_array(ctx, Float16, (4, 5))), Float16, (4, 5))
     _check_array(@inferred(allocate_array(ctx, Float16, 4, 5)), Float16, (4, 5))
     _check_array(@inferred(allocate_array(ctx)), Float32, ())
-    @test @inferred(fill_array(ctx, 1.5, 2, 3)) == fill(1.5f0, 2, 3)
+    @test @inferred(fill_array(ctx, 1.5, UInt8(2), big(3))) == fill(1.5f0, 2, 3)
+    @test_throws InexactError fill_array(ctx, 1, big(typemax(Int)) + 1)
     @test @inferred(fill_array(ctx, true, 2)) == fill(true, 2)
 
     test_gencontext_draws(ctx)

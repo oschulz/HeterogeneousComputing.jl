@@ -320,7 +320,7 @@ The content of the newly allocated array is undefined.
 function allocate_array end
 export allocate_array
 
-allocate_array(cunit::AbstractComputeUnit, ::Type{T}, dims::Integer...) where T = allocate_array(cunit, T, dims)
+allocate_array(cunit::AbstractComputeUnit, ::Type{T}, dims::Integer...) where T = allocate_array(cunit, T, Dims(dims))
 
 allocate_array(::CPUnit, ::Type{T}, dims::Dims) where T = Array{T}(undef, dims)
 
@@ -346,4 +346,4 @@ export fill_array
 function fill_array(cunit::AbstractComputeUnit, x, dims::Dims)
     return _within_unit(() -> fill!(allocate_array(cunit, typeof(x), dims), x), cunit)
 end
-fill_array(cunit::AbstractComputeUnit, x, dims::Integer...) = fill_array(cunit, x, dims)
+fill_array(cunit::AbstractComputeUnit, x, dims::Integer...) = fill_array(cunit, x, Dims(dims))
