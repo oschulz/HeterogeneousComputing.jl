@@ -100,7 +100,9 @@ Wraps an RNG that generates the numbers. Fills of dense host arrays and of
 GPU arrays, and draws that allocate arrays of numbers, characters, tuples or
 pairs, go to the wrapped RNG unchanged, so they match its results. Other
 draws use `Random`'s generic algorithms on top of the wrapped
-RNG's scalar draws. `Random.seed!` reseeds the wrapped RNG, the key stays.
+RNG's scalar draws. Available operations depend on the wrapped RNG. A
+[`GenContext`](@ref) provides device fallbacks such as exponential sampling.
+`Random.seed!` reseeds the wrapped RNG, the key stays.
 Roots and children on a device keep allocating there when another device
 becomes active. Keyed RNGs are created with [`rootrng`](@ref) and [`subrng`](@ref).
 """

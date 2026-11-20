@@ -68,7 +68,7 @@ randn(proposal, 5)
 
 The key of `proposal` depends only on the seed and on the ids along the way, so the same numbers come out no matter how many values were drawn from `root` or `chain` before, in which order siblings were derived, or on which thread. The same ids always yield the same stream, so algorithms that run repeatedly need an id, like a step number, that tells the runs apart.
 
-Keyed RNGs are ordinary `AbstractRNG`s and work wherever an RNG is accepted. They wrap an RNG of the kind the compute unit uses for drawing numbers, so children derived on a GPU draw with the GPU's generator.
+Keyed RNGs implement `AbstractRNG` and draw with the generator of their compute unit. The available operations depend on that generator. For example, a GPUArrays generator supports uniform and normal array draws. For exponential draws on that device, pass the keyed RNG to a [`GenContext`](@ref) and use `randexp(ctx, dims)`.
 
 If the state words derived from two distinct stream keys are modeled as independent and uniform, the probability of identical initial states is about `2^-256` for CPU Xoshiro and `2^-128` for GPUArrays Philox. GPUArrays uses a 64-bit Philox key and a 64-bit call counter that advances once per nonempty fill. For two runs of `L ≥ 1` consecutive nonempty fills each, the probability of using a common key and call counter is `min(2^64, 2L - 1) / 2^128` under this model.
 
