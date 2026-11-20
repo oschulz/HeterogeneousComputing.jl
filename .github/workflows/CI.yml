@@ -56,6 +56,21 @@ jobs:
       - uses: julia-actions/julia-runtest@v1
         with:
           coverage: ${{ matrix.version == '1' && matrix.os == 'ubuntu-latest' && matrix.arch == 'x64' }}
+      - name: Test JLArrays with KernelAbstractions 0.9 and 0.10
+        if: ${{ matrix.version == '1' && matrix.os == 'ubuntu-latest' && matrix.arch == 'x64' }}
+        run: |
+          for ka in 0.9 0.10; do
+            julia --color=yes -e '
+              using Pkg
+              Pkg.activate(temp = true)
+              Pkg.develop(path = pwd())
+              Pkg.add([PackageSpec(name = "JLArrays"), PackageSpec(name = "KernelAbstractions", version = only(ARGS))])
+              using HeterogeneousComputing, JLArrays, KernelAbstractions
+              unit = AbstractComputeUnit(JLBackend())
+              x = rand(GenContext{Float32}(unit, rootrng(unit, 42)), 8)
+              @assert get_compute_unit(x) == unit && KernelAbstractions.Backend(unit) === KernelAbstractions.get_backend(x)
+            ' "$ka"
+          done
       - name: Test Reactant with IFRT
         if: ${{ matrix.version == '1' && matrix.os == 'ubuntu-latest' && matrix.arch == 'x64' }}
         run: |
