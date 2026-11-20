@@ -230,7 +230,9 @@ _gen_convert(::Type{T}, x::_ConcreteFloat) where T = convert(T, x)
 
 # Reactant's fill! converts the scalar in the destination element type.
 function _fill_concrete_number(cunit, ::Type{T}, x, dims) where T
-    return fill!(allocate_array(cunit, T, dims), adapt(cunit, x))
+    # Eager fill! compiles an XLA program. Keep it in the native interpreter
+    # when Reactant infers a caller that may also receive a traced scalar.
+    return Reactant.call_with_native(fill!, allocate_array(cunit, T, dims), adapt(cunit, x))
 end
 
 function HeterogeneousComputing.fill_array(cunit::ReactantUnit, x::_ConcreteNumbers, dims::Dims)
