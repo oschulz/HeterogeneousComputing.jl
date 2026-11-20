@@ -23,6 +23,11 @@ import Random
 const ReactantUnit = DeviceUnit{<:ReactantDevice}
 const _IFRTSingleUnit = DeviceUnit{<:ReactantDevice{<:XLA.IFRT.Client,<:XLA.IFRT.Device}}
 
+# The client marker keeps containers of traced units non-singleton, so Reactant
+# visits their fields when turning a traced result into a concrete one.
+const _TracedDevice = ReactantDevice{Union{Missing,Nothing},Missing,Union{Missing,Sharding.Mesh},Nothing,Union{}}
+const _PartialUnit = DeviceUnit{_TracedDevice}
+
 const _ConcreteTypes = Union{
     Reactant.ConcretePJRTArray,Reactant.ConcretePJRTNumber,
     Reactant.ConcreteIFRTArray,Reactant.ConcreteIFRTNumber
@@ -40,6 +45,9 @@ function _canonical_device(dev::ReactantDevice)
     sharding = _mesh_sharding(dev.sharding)
     if within_compile()
         client, device = dev.client, dev.device
+        if ismissing(client) && ismissing(device) && ismissing(sharding)
+            return _TracedDevice(missing, missing, missing)
+        end
     elseif sharding === missing
         client, device = _resolve_location(dev.client, something(dev.device, missing))
         sharding = Sharding.NoSharding()
@@ -48,6 +56,7 @@ function _canonical_device(dev::ReactantDevice)
     end
     return MLDataDevices.with_eltype(ReactantDevice(client, device, sharding), nothing)
 end
+_canonical_device(dev::_TracedDevice) = dev
 
 _resolve_location(client, device) = (client, device)
 _resolve_location(::Missing, ::Missing) = _resolve_location(XLA.default_backend(), missing)
@@ -220,9 +229,45 @@ function allocate_array(cunit::ReactantUnit, ::Type{T}, dims::Dims) where T
 end
 
 
-# Reactant can't return XLA clients from compiled code, which units hold.
-# Compiled code only runs on the unit it was compiled for, so units are
-# returned as constants, like Reactant returns XLA devices:
+_execution_mesh(global_mesh, ::Missing) = global_mesh
+function _execution_mesh(global_mesh, layout::Sharding.Mesh)
+    return Sharding.Mesh(global_mesh.device_ids, layout.logical_device_ids, layout.axis_names, size(layout))
+end
+
+function _execution_unit(client, device, global_mesh, layout)
+    sharding = isnothing(device) ? Sharding.Replicated(_execution_mesh(global_mesh, layout)) : Sharding.NoSharding()
+    return DeviceUnit(ReactantDevice(client, device, sharding))
+end
+
+# A returned container must be able to hold the unit chosen by the executable.
+function Reactant.traced_type_inner(
+    T::Type{<:_PartialUnit},
+    seen,
+    mode::Reactant.TraceMode,
+    track_numbers::Type,
+    ndevices,
+    runtime
+)
+    return mode == Reactant.TracedToConcrete ? ReactantUnit : T
+end
+
+function Reactant.make_tracer(seen, prev::_PartialUnit, path, mode; kwargs...)
+    if mode == Reactant.NoStopTracedTrack || mode == Reactant.TracedTrack
+        # The executable's global mesh stores device IDs in physical order.
+        meshes = Reactant.Compiler.sdycache(; throw_error = false)
+        if !isnothing(meshes) && length(meshes) == 1
+            return DeviceUnit(_TracedDevice(missing, missing, only(values(meshes)).mesh))
+        end
+    elseif mode == Reactant.TracedToConcrete
+        # A changed field makes Reactant rebuild containers with their result type.
+        return DeviceUnit(_TracedDevice(nothing, missing, prev.device.sharding))
+    end
+    mode == Reactant.TracedToTypes && push!(path, typeof(prev))
+    return prev
+end
+
+# A traced value only acquires its concrete unit when the executable runs.
+# An explicitly supplied unit already holds its client and device.
 function Reactant.Compiler.create_result(
     tocopy::ReactantUnit,
     @nospecialize(_path::Tuple),
@@ -236,7 +281,8 @@ function Reactant.Compiler.create_result(
     _var_idx,
     _resultgen_code
 )
-    return Meta.quot(tocopy)
+    tocopy isa _PartialUnit || return Meta.quot(tocopy)
+    return :($_execution_unit(thunk.client, thunk.device, global_mesh, $(Meta.quot(tocopy.device.sharding))))
 end
 
 # Reactant traces captured arrays as operands and infers execution placement

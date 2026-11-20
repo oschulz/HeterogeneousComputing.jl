@@ -109,12 +109,24 @@ Adapt.@adapt_structure _ReactantBox
             a0 = Reactant.to_rarray(rand(2); device = devs[1])
             a1 = adapt(u1, rand(2))
             @test Reactant.XLA.device(a1) == devs[2]
+            returned_unit = @jit get_compute_unit(a1)
+            @test Reactant.XLA.device(fill_array(returned_unit, 1.0f0, 2)) == devs[2]
+            boxed_unit = @jit (a -> _ReactantBox(get_compute_unit(a)))(a1)
+            @test boxed_unit.value == u1
             @test get_compute_unit(s) != u0 && get_compute_unit(s) != u1
             @test get_compute_unit((a0, s, a1)) === MixedComputeSystem()
 
             # Units of sharded arrays keep the device mesh, new data on them
             # is replicated over it:
             us = get_compute_unit(s)
+            @test get_compute_unit(fill_array(@jit(get_compute_unit(s)), 1.0f0, 2)) == us
+            if devs[1] isa Reactant.XLA.IFRT.Device
+                reversed = Reactant.Sharding.Mesh(reverse(devs[1:2]), (:x,))
+                sharding = Reactant.Sharding.NamedSharding(reversed, (:x,))
+                reversed_array = Reactant.to_rarray(Float32[1, 2, 3, 4]; sharding)
+                returned_mesh_unit = @jit get_compute_unit(reversed_array)
+                @test get_compute_unit(fill_array(returned_mesh_unit, 1.0f0, 4)) == get_compute_unit(reversed_array)
+            end
             @test us ==
                   get_compute_unit(Reactant.to_rarray(rand(6); sharding = Reactant.Sharding.NamedSharding(mesh, (:x,))))
             @test get_compute_unit(allocate_array(us, Float32, 4)) == us
@@ -160,6 +172,8 @@ Adapt.@adapt_structure _ReactantBox
             @test adapt(u0, ctx0) === ctx0
             ctx1 = adapt(u1, ctx0)
             @test get_compute_unit(ctx1) == u1 && get_compute_unit(get_rng(ctx1)) == u1
+            traced_ctx = @jit (r -> GenContext{Float32}(r))(get_rng(ctx1))
+            @test get_compute_unit(traced_ctx) == get_compute_unit(get_rng(traced_ctx)) == u1
             @test Array(get_rng(ctx0).seed) != [1, 2]
             @test Array(get_rng(ctx1).seed) == Array(get_rng(adapt(u1, seeded_ctx0())).seed)
             @test Array(get_rng(adapt(u1, ctx0)).seed) != Array(get_rng(ctx1).seed)
