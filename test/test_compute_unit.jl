@@ -94,6 +94,9 @@ end
         @test @inferred(get_compute_unit(A)) === CPUnit()
         @test @inferred(get_compute_unit(VectorOfSimilarVectors(A))) === CPUnit()
         @test @inferred(get_compute_unit((a = A, b = (Fill(1.0, 3), view(rand(4), 2:3))))) === CPUnit()
+        wide = ntuple(_ -> A, 256)
+        @test @inferred(get_compute_unit(wide)) === CPUnit()
+        @test get_compute_unit((wide..., jl_data)) === MixedComputeSystem()
 
         # Types and RNGs:
         @test @inferred(get_compute_unit(Float64)) === ComputeUnitIndependent()

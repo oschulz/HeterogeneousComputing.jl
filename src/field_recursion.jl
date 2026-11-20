@@ -11,21 +11,27 @@
 @inline _get_cunit_via(::_RecurseFields, x, visited) = _get_fields_cunit(x, visited)
 
 const _max_inline_depth = 8
+const _max_inline_fields = 64
 
-function _fields_cunit_expr(@nospecialize(T::Type), xex, vex, depth::Int)
-    isprimitivetype(T) && return :(ComputeUnitIndependent())
+function _fields_cunit_expr(@nospecialize(T::Type), xex, vex, depth::Int, budget::Int = _max_inline_fields)
+    n = fieldcount(T)
+    n == 0 && return :(ComputeUnitIndependent())
     # Keep homogeneous primitive tuples (e.g. static array data) compact,
     # while allowing individual elements to have their own compute unit rules.
-    T <: Tuple && isprimitivetype(eltype(T)) && return :(_primitive_tuple_cunit($xex))
+    T <: Tuple && isprimitivetype(eltype(T)) && return :(_loop_fields_cunit($xex, $vex))
     # Types that may close reference loops need to be tracked:
     depth > 0 && _may_close_ref_loop(T) && return :(_get_fields_cunit($xex, $vex))
+    n > _max_inline_fields && return :(_loop_fields_cunit($xex, $vex))
+    n > budget && return :(_get_fields_cunit($xex, $vex))
+    # Reserve one field access per sibling, then share the remaining budget.
+    child_budget = (budget - n) ÷ n
     body = Expr(:block)
     cunit = gensym(:cunit)
     push!(body.args, :($cunit = ComputeUnitIndependent()))
-    for i in 1:fieldcount(T)
+    for i in 1:n
         FT = fieldtype(T, i)
         f = gensym(:field)
-        fcunit = Expr(:let, :($f = getfield($xex, $i)), _field_cunit_expr(FT, f, vex, depth))
+        fcunit = Expr(:let, :($f = getfield($xex, $i)), _field_cunit_expr(FT, f, vex, depth, child_budget))
         if ismutabletype(T) && !isbitstype(FT)
             fcunit = :(isdefined($xex, $i) ? $fcunit : ComputeUnitIndependent())
         end
@@ -37,22 +43,28 @@ function _fields_cunit_expr(@nospecialize(T::Type), xex, vex, depth::Int)
     return body
 end
 
-function _field_cunit_expr(@nospecialize(FT::Type), f::Symbol, vex, depth::Int)
-    if !isconcretetype(FT) || _has_cunit_rule(FT) || depth >= _max_inline_depth
+function _field_cunit_expr(@nospecialize(FT::Type), f::Symbol, vex, depth::Int, budget::Int)
+    if !isconcretetype(FT) || _has_cunit_rule(FT) || depth >= _max_inline_depth || budget == 0
         return :(_get_cunit($f, $vex))
     else
         rule = gensym(:rule)
         return quote
             $rule = get_compute_unit_impl($f)
-            $rule isa _RecurseFields ? $(_fields_cunit_expr(FT, f, vex, depth + 1)) : $rule
+            $rule isa _RecurseFields ? $(_fields_cunit_expr(FT, f, vex, depth + 1, budget)) : $rule
         end
     end
 end
 
-function _primitive_tuple_cunit(x)
-    cunit = get_compute_unit(first(x))
-    for i in 2:length(x)
-        cunit = merge_compute_units(get_compute_unit(x[i]), cunit)
+@inline function _loop_field_cunit(x, i, visited)
+    ismutabletype(typeof(x)) && !isdefined(x, i) && return ComputeUnitIndependent()
+    # The caller visits exactly 1:fieldcount(typeof(x)) on a nonempty record.
+    return _get_cunit(getfield(x, i, false), visited)
+end
+
+function _loop_fields_cunit(x, visited)
+    cunit = _loop_field_cunit(x, 1, visited)
+    for i in 2:fieldcount(typeof(x))
+        cunit = merge_compute_units(_loop_field_cunit(x, i, visited), cunit)
     end
     return cunit
 end
