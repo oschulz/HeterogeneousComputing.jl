@@ -45,6 +45,12 @@ Adapt.@adapt_structure _ReactantBox
 
     ctx = GenContext{Float32}(cunit)
     @test get_compute_unit(get_rng(ctx)) == cunit
+    value = Reactant.ConcreteRNumber(nextfloat(2.25))
+    for filled in (fill_array(ctx, value, 3), @jit(fill_array(ctx, value, 3)))
+        @test eltype(filled) === Float32 && Array(filled) == fill(2.25f0, 3)
+    end
+    host_fill = fill_array(GenContext{Float32}(), value, 3)
+    @test host_fill isa Vector{Float32} && host_fill == fill(2.25f0, 3)
 
     # Units derived within compiled code don't specify the device, but merge
     # with units that do:

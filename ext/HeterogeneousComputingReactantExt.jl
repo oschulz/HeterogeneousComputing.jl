@@ -216,6 +216,13 @@ function Adapt.adapt_storage(cunit::ReactantUnit, x::_ConcreteNumbers)
 end
 
 _gen_convert(::Type{T}, x::TracedRNumber{<:AbstractFloat}) where T = convert(TracedRNumber{T}, x)
+const _ConcreteFloat = Reactant.AbstractConcreteNumber{<:AbstractFloat}
+_gen_convert(::Type{T}, x::_ConcreteFloat) where T = convert(T, x)
+
+# Reactant's fill! converts the scalar in the destination element type.
+function HeterogeneousComputing.fill_array(ctx::GenContext{T,<:ReactantUnit}, x::_ConcreteFloat, dims::Dims) where T
+    return fill!(allocate_array(ctx, dims), x)
+end
 
 function allocate_array(cunit::ReactantUnit, ::Type{T}, dims::Dims) where T
     U = Reactant.unwrapped_eltype(T)
