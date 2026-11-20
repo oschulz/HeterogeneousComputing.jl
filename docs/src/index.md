@@ -68,7 +68,9 @@ randn(proposal, 5)
 
 The key of `proposal` depends only on the seed and on the ids along the way, so the same numbers come out no matter how many values were drawn from `root` or `chain` before, in which order siblings were derived, or on which thread. The same ids always yield the same stream, so algorithms that run repeatedly need an id, like a step number, that tells the runs apart.
 
-Keyed RNGs are ordinary `AbstractRNG`s and work wherever an RNG is accepted. They wrap an RNG of the kind the compute unit uses for drawing numbers, so children derived on a GPU draw with the GPU's generator. The state of that generator is derived from the key, but on GPUs holds only 128 bits of it. The streams of two distinct keys coincide with negligible probability, about 2^-256 on the CPU and 2^-128 on GPUs.
+Keyed RNGs are ordinary `AbstractRNG`s and work wherever an RNG is accepted. They wrap an RNG of the kind the compute unit uses for drawing numbers, so children derived on a GPU draw with the GPU's generator.
+
+If the state words derived from two distinct stream keys are modeled as independent and uniform, the probability of identical initial states is about `2^-256` for CPU Xoshiro and `2^-128` for GPUArrays Philox. GPUArrays uses a 64-bit Philox key and a 64-bit call counter that advances once per nonempty fill. For two runs of `L ≥ 1` consecutive nonempty fills each, the probability of using a common key and call counter is `min(2^64, 2L - 1) / 2^128` under this model.
 
 A `GenContext` takes a keyed RNG like any other RNG. [`rootcontext`](@ref) turns a context into one with a keyed RNG, whose key is drawn from the RNG of the context, [`subcontext`](@ref) derives child contexts, and `adapt` keeps the key when a context moves to another compute unit:
 
