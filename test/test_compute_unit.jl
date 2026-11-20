@@ -26,6 +26,11 @@ mutable struct _TestNode
     _TestNode(data) = new(data)
 end
 
+mutable struct _TestOptionalStep
+    data::Vector{Float64}
+    step::Union{Nothing,Int}
+end
+
 
 @testset "compute_unit" begin
     @testset "CPUnit" begin
@@ -126,6 +131,8 @@ end
     end
 
     @testset "get_compute_unit with reference loops" begin
+        @test @inferred(get_compute_unit(_TestOptionalStep([1.0], nothing))) === CPUnit()
+
         # Self-referencing closure, captured via a Core.Box:
         local f
         x = JLArray(rand(3))

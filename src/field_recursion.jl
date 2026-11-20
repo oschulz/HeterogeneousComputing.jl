@@ -73,7 +73,12 @@ function _may_close_ref_loop(@nospecialize(T::Type))
     pending = Any[fieldtypes(T)...]
     while !isempty(pending)
         FT = pop!(pending)
-        isbitstype(FT) && continue
+        # Ordinary arrays have a compute unit rule and never recurse into storage.
+        (isbitstype(FT) || FT <: Array) && continue
+        if FT isa Union
+            push!(pending, FT.a, FT.b)
+            continue
+        end
         (!isconcretetype(FT) || FT === T) && return true
         FT in seen && continue
         push!(seen, FT)
