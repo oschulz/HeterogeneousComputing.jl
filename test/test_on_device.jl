@@ -29,12 +29,21 @@ Adapt.adapt_structure(dev::AbstractDevice, x::_DeviceBox) = _DeviceBox(Adapt.ada
 
     calls = Ref(0)
     unknown, other = _UnknownUnitRNG(), JLArray(y)
-    counted = on_device((args...) -> (calls[] += 1), CPUnit(), x, other, unknown)
+    count_call(args...) = (calls[] += 1)
+    counted = on_device(count_call, CPUnit(), x, other, unknown)
     for args in ((x, other, unknown), (unknown, x, other), (x, unknown, other))
         @test_throws ArgumentError counted(args...)
     end
     @test iszero(calls[])
     @test counted(unknown, x, x) == 1
+
+    for args in (((host = x, unknown = unknown, other = other),), ((x, unknown), other), (other, Some((unknown, x))))
+        nested = on_device(count_call, CPUnit(), args...)
+        @test_throws ArgumentError nested(args...)
+    end
+    @test calls[] == 1
+    compatible = (host = x, unknown = unknown)
+    @test on_device(count_call, CPUnit(), compatible)(compatible) == 2
 
     h = on_device(f, CPUnit(), dummy_x, dummy_y)
     @test h(x, y) ≈ f(x, y)

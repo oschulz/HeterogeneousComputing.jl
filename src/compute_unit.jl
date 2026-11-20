@@ -183,7 +183,7 @@ Don't specialize `get_compute_unit`, specialize
 function get_compute_unit end
 export get_compute_unit
 
-get_compute_unit(x) = _get_cunit(x, nothing)
+get_compute_unit(x) = _get_cunit(x, nothing, merge_compute_units)
 
 
 """

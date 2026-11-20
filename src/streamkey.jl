@@ -238,7 +238,7 @@ for S in (
 end
 
 get_compute_unit_impl(rng::KeyedRNG) = isnothing(rng.cunit) ? _RecurseFields() : rng.cunit
-_get_fields_cunit(rng::KeyedRNG, visited) = _get_cunit(rng.rng, visited)
+_get_fields_cunit(rng::KeyedRNG, visited, combine) = _get_cunit(rng.rng, visited, combine)
 
 function _fill_random!(f!::F, rng::KeyedRNG, A::AbstractArray) where {F}
     return _fill_random!(f!, rng.rng, A)

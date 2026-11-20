@@ -71,23 +71,28 @@ function (f::_OnDevice{N})(@nospecialize(args...)) where {N}
 end
 
 
-# An unknown argument retains its result adaptor. Other arguments can still conflict.
+struct _ArgumentUnits{K,U}
+    known::K
+    unknown::U
+end
+_ArgumentUnits(unit) = _ArgumentUnits(unit, nothing)
+_ArgumentUnits(unit::UnknownComputeUnitOf) = _ArgumentUnits(ComputeUnitIndependent(), unit)
+_ArgumentUnits(units::_ArgumentUnits) = units
+function _ArgumentUnits(::MixedComputeSystem, unknown)
+    return throw(ArgumentError("on_device function arguments are on different compute units"))
+end
+
+# An unknown result adaptor can coexist with known units deeper in the arguments.
+function _merge_argument_units(a, b)
+    left, right = _ArgumentUnits(a), _ArgumentUnits(b)
+    known = merge_compute_units(left.known, right.known)
+    return _ArgumentUnits(known, isnothing(left.unknown) ? right.unknown : left.unknown)
+end
+
 function _result_cunit(args::Tuple, cunit::AbstractComputeUnit)
-    known = ComputeUnitIndependent()
-    unknown = nothing
-    visited = length(args) > 1 ? _share_visited(nothing) : nothing
-    for arg in args
-        unit = _get_cunit(arg, visited)
-        if unit isa UnknownComputeUnitOf
-            unknown = unit
-        else
-            known = merge_compute_units(unit, known)
-            known isa MixedComputeSystem &&
-                throw(ArgumentError("on_device function arguments are on different compute units"))
-        end
-    end
-    isnothing(unknown) || return unknown
-    return known isa ComputeUnitIndependent ? cunit : known
+    units = _ArgumentUnits(_get_fields_cunit(args, nothing, _merge_argument_units))
+    isnothing(units.unknown) || return units.unknown
+    return units.known isa ComputeUnitIndependent ? cunit : units.known
 end
 
 @inline _run_maybe_with_lock(f, ::Nothing, args::Vararg{Any,N}) where {N} = f(args...)

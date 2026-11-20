@@ -4,10 +4,10 @@
 # functions only see code defined before them.
 
 # Sibling paths share an identity set, created when a possible loop is reached.
-@inline _get_cunit(x, visited) = _get_cunit_via(get_compute_unit_impl(x), x, visited)
+@inline _get_cunit(x, visited, combine) = _get_cunit_via(get_compute_unit_impl(x), x, visited, combine)
 
-@inline _get_cunit_via(cunit, @nospecialize(x), @nospecialize(visited)) = cunit
-@inline _get_cunit_via(::_RecurseFields, x, visited) = _get_fields_cunit(x, visited)
+@inline _get_cunit_via(cunit, @nospecialize(x), @nospecialize(visited), @nospecialize(combine)) = cunit
+@inline _get_cunit_via(::_RecurseFields, x, visited, combine) = _get_fields_cunit(x, visited, combine)
 
 const _max_inline_depth = 8
 const _max_inline_fields = 64
@@ -17,11 +17,11 @@ function _fields_cunit_expr(@nospecialize(T::Type), xex, vex, depth::Int, budget
     n == 0 && return :(ComputeUnitIndependent())
     # Keep homogeneous primitive tuples (e.g. static array data) compact,
     # while allowing individual elements to have their own compute unit rules.
-    T <: Tuple && isprimitivetype(eltype(T)) && return :(_loop_fields_cunit($xex, $vex))
+    T <: Tuple && isprimitivetype(eltype(T)) && return :(_loop_fields_cunit($xex, $vex, combine))
     # Types that may close reference loops need to be tracked:
-    depth > 0 && _may_close_ref_loop(T) && return :(_get_fields_cunit($xex, $vex))
-    n > _max_inline_fields && return :(_loop_fields_cunit($xex, $vex))
-    n > budget && return :(_get_fields_cunit($xex, $vex))
+    depth > 0 && _may_close_ref_loop(T) && return :(_get_fields_cunit($xex, $vex, combine))
+    n > _max_inline_fields && return :(_loop_fields_cunit($xex, $vex, combine))
+    n > budget && return :(_get_fields_cunit($xex, $vex, combine))
     # Reserve one field access per sibling, then share the remaining budget.
     child_budget = (budget - n) ÷ n
     body = Expr(:block)
@@ -40,7 +40,7 @@ function _fields_cunit_expr(@nospecialize(T::Type), xex, vex, depth::Int, budget
             fcunit = :(isdefined($xex, $i) ? $fcunit : ComputeUnitIndependent())
         end
         new_cunit = gensym(:cunit)
-        push!(body.args, :($new_cunit = merge_compute_units($fcunit, $cunit)))
+        push!(body.args, :($new_cunit = combine($fcunit, $cunit)))
         cunit = new_cunit
     end
     push!(body.args, cunit)
@@ -49,7 +49,7 @@ end
 
 function _field_cunit_expr(@nospecialize(FT::Type), f::Symbol, vex, depth::Int, budget::Int)
     if !isconcretetype(FT) || _has_cunit_rule(FT) || depth >= _max_inline_depth || budget == 0
-        return :(_get_cunit($f, $vex))
+        return :(_get_cunit($f, $vex, combine))
     else
         rule = gensym(:rule)
         return quote
@@ -59,17 +59,17 @@ function _field_cunit_expr(@nospecialize(FT::Type), f::Symbol, vex, depth::Int, 
     end
 end
 
-@inline function _loop_field_cunit(x, i, visited)
+@inline function _loop_field_cunit(x, i, visited, combine)
     ismutabletype(typeof(x)) && !isdefined(x, i) && return ComputeUnitIndependent()
     # The caller visits exactly 1:fieldcount(typeof(x)) on a nonempty record.
-    return _loop_value_cunit(getfield(x, i, false), visited)
+    return _loop_value_cunit(getfield(x, i, false), visited, combine)
 end
 
-function _loop_fields_cunit(x, visited)
+function _loop_fields_cunit(x, visited, combine)
     visited = _share_visited(visited)
-    cunit = _loop_field_cunit(x, 1, visited)
+    cunit = _loop_field_cunit(x, 1, visited, combine)
     for i in 2:fieldcount(typeof(x))
-        cunit = merge_compute_units(_loop_field_cunit(x, i, visited), cunit)
+        cunit = combine(_loop_field_cunit(x, i, visited, combine), cunit)
     end
     return cunit
 end
@@ -118,7 +118,7 @@ end
 # The recursion through fields of concrete types is inlined into a single
 # generated function body, since inference gives up on recursive calls of
 # the same method for nested types:
-@generated function _get_fields_cunit(x, visited)
+@generated function _get_fields_cunit(x, visited, combine)
     body = Expr(:block)
     if _may_close_ref_loop(x)
         push!(body.args, :(visited = _visit!(visited, x)))
@@ -130,6 +130,6 @@ end
 
 # Expand the element rule once for a wide record, so nested wrappers can be
 # inferred without unrolling the entire loop.
-@generated function _loop_value_cunit(x, visited)
+@generated function _loop_value_cunit(x, visited, combine)
     return _field_cunit_expr(x, :x, :visited, 0, _max_inline_fields)
 end
