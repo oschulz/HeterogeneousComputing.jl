@@ -7,7 +7,7 @@ using HeterogeneousComputing: _OnDevice
 import HeterogeneousComputing: get_compute_unit_impl, get_precision_fromtype, allocate_array, compute_unit_mergerule
 import HeterogeneousComputing:
     _canonical_device, _same_device, _fill_random!, _draw_scalar, _scalar_randfun, _RecurseFields, _gen_convert
-import HeterogeneousComputing: _draw_seeds, _seeded_rng, _seeded_rng_like
+import HeterogeneousComputing: _draw_seeds, _seeded_rng, _seeded_rng_like, _with_seed_draw
 
 import Reactant
 using Reactant: ConcreteRArray, TracedRArray, TracedRNumber, ReactantRNG, within_compile
@@ -146,11 +146,14 @@ const _ConcreteRNG = ReactantRNG{<:Reactant.AbstractConcreteArray}
 
 # Reactant RNGs can't draw outside of compiled code, so new seeds and a new
 # state are derived from the current state instead:
-function _draw_seeds(rng::_ConcreteRNG, ::AbstractComputeUnit)
+function _with_seed_draw(f::F, rng::_ConcreteRNG, ::AbstractComputeUnit) where F
     tmp = Random.Xoshiro(Array(rng.seed))
-    Random.seed!(rng, rand(tmp, UInt64, length(rng.seed)))
-    return ntuple(_ -> rand(tmp, UInt64), Val(4))
+    next_state = rand(tmp, UInt64, length(rng.seed))
+    result = f(ntuple(_ -> rand(tmp, UInt64), Val(4)))
+    Random.seed!(rng, next_state)
+    return result
 end
+_draw_seeds(rng::_ConcreteRNG, home::AbstractComputeUnit) = _with_seed_draw(identity, rng, home)
 
 function _draw_seeds(::ReactantRNG{<:TracedRArray}, ::AbstractComputeUnit)
     return throw(ArgumentError("Contexts can't be adapted to other compute units within compiled code"))

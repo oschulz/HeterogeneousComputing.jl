@@ -7,6 +7,7 @@ import GPUArrays
 using HeterogeneousComputing: AbstractComputeUnit
 import HeterogeneousComputing: get_compute_unit_impl, _rng_cunit, _seeded_rng_like
 import HeterogeneousComputing: _copy_rng, _isequal_rng, _hash_rng
+import HeterogeneousComputing: _rng_snapshot, _commit_seed_draw!
 
 using MLDataDevices: get_device
 
@@ -25,6 +26,11 @@ end
 
 # GPUArrays.RNG supports neither `copy` nor `==`:
 _copy_rng(rng::GPUArrays.RNG) = typeof(rng)(rng.seed, rng.counter)
+_rng_snapshot(rng::GPUArrays.RNG) = _copy_rng(rng)
+function _commit_seed_draw!(rng::GPUArrays.RNG, staged::GPUArrays.RNG, ::AbstractComputeUnit)
+    rng.counter = staged.counter
+    return rng
+end
 function _isequal_rng(a::GPUArrays.RNG, b::GPUArrays.RNG)
     return typeof(a) == typeof(b) && a.seed == b.seed && a.counter == b.counter
 end

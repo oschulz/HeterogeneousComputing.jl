@@ -5,11 +5,23 @@ using Test
 
 using Random
 using MLDataDevices: CPUDevice, cpu_device
+import MLDataDevices
 using JLArrays
 import GPUArrays
 using Adapt: adapt
 
+struct _AlternateHost <: AbstractComputeUnit end
+HeterogeneousComputing.is_host_unit(::_AlternateHost) = true
+MLDataDevices.default_device_rng(::_AlternateHost) = MersenneTwister(1)
 
+struct _UnseedableUnit <: AbstractComputeUnit end
+MLDataDevices.default_device_rng(::_UnseedableUnit) = RandomDevice()
+
+struct _RejectingUnit <: AbstractComputeUnit end
+function HeterogeneousComputing._seeded_rng(::_RejectingUnit, seeds::NTuple{4,UInt64})
+    all(iszero, seeds) || throw(DomainError(seeds))
+    return Xoshiro(1)
+end
 
 @testset "gen_context" begin
     RNG = typeof(Random.default_rng())
@@ -31,6 +43,13 @@ using Adapt: adapt
     cpunit = CPUnit()
     rng = Random.default_rng()
     ctx = GenContext{Float32}()
+
+    host_rng = MersenneTwister(2)
+    @test get_rng(adapt(_AlternateHost(), GenContext(host_rng))) === host_rng
+    src = Xoshiro(4)
+    @test_throws ArgumentError adapt(_UnseedableUnit(), GenContext(src))
+    @test_throws DomainError adapt(_RejectingUnit(), GenContext(src))
+    @test rand(src, UInt64, 8) == rand(Xoshiro(4), UInt64, 8)
 
     @test @inferred(GenContext(ctx)) isa typeof(ctx)
     @test @inferred(GenContext{Float16}(ctx)) isa GenContext{Float16}

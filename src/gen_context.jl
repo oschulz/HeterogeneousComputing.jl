@@ -46,6 +46,9 @@ should reside on the compute unit of `ctx`) with random numbers.
 number generator stays if it is native to `cunit`, otherwise a new generator
 native to `cunit` is created, seeded with random numbers drawn from the old
 one. A stream key of the generator (see [`rng_streamkey`](@ref)) stays.
+A destination construction error preserves the state of a copyable source
+RNG. Opaque native generators, such as cuRAND library RNGs, can advance if
+the destination fails after receiving the seed.
 
 [`rootcontext`](@ref) turns a context into one with a keyed RNG,
 [`subcontext`](@ref) derives child contexts from it.
@@ -134,7 +137,8 @@ function Adapt.adapt_structure(to, ctx::GenContext{T}) where T
     cunit == ctx.cunit && return ctx
     # Some RNGs report the active device of their backend as their home.
     rng = _within_unit(ctx.cunit) do
-        return _rng_native_to(get_compute_unit(ctx.rng), cunit) ? ctx.rng : _derived_rng(ctx, cunit)
+        rng_cunit = get_compute_unit(ctx.rng)
+        return _rng_native_to(rng_cunit, cunit) ? ctx.rng : _derived_rng(ctx, cunit, _rng_home(rng_cunit, ctx.cunit))
     end
     return GenContext{T}(cunit, rng)
 end
@@ -147,17 +151,37 @@ _adapted_cunit(@nospecialize(to), cunit::AbstractComputeUnit) = cunit
 
 # Host RNGs are native to host units, device RNGs to their own unit:
 _rng_native_to(::ComputeUnitIndependent, cunit::AbstractComputeUnit) = is_host_unit(cunit)
-_rng_native_to(rng_cunit::AbstractComputeUnit, cunit::AbstractComputeUnit) = rng_cunit == cunit
+function _rng_native_to(rng_cunit::AbstractComputeUnit, cunit::AbstractComputeUnit)
+    return rng_cunit == cunit || (is_host_unit(rng_cunit) && is_host_unit(cunit))
+end
 _rng_native_to(::Any, ::AbstractComputeUnit) = false
 
 # A new RNG native to `cunit`, seeded with random numbers drawn from the RNG
 # of `ctx`:
-function _derived_rng(ctx::GenContext, cunit::AbstractComputeUnit)
-    return _keep_streamkey(ctx.rng, _seeded_rng(cunit, _draw_seeds(ctx)), cunit)
+function _derived_rng(ctx::GenContext, cunit::AbstractComputeUnit, home::AbstractComputeUnit)
+    rng = _with_seed_draw(seeds -> _seeded_rng(cunit, seeds), ctx.rng, home)
+    return _keep_streamkey(ctx.rng, rng, cunit)
 end
 
-function _draw_seeds(ctx::GenContext)
-    return _draw_seeds(ctx.rng, _rng_home(get_compute_unit(ctx.rng), ctx.cunit))
+# Commit the source advance only after the destination was constructed.
+_rng_snapshot(rng::AbstractRNG) = applicable(copy, rng) ? copy(rng) : nothing
+function _commit_seed_draw!(rng::AbstractRNG, staged::AbstractRNG, home::AbstractComputeUnit)
+    return applicable(copy!, rng, staged) ? copy!(rng, staged) : _draw_seeds(rng, home)
+end
+
+function _with_seed_draw(f::F, rng::AbstractRNG, home::AbstractComputeUnit) where F
+    staged = _rng_snapshot(rng)
+    if isnothing(staged) || staged === rng
+        # Opaque generators cannot be rewound. Raise errors independent of
+        # the seed when inference proves that no seed can return a result.
+        if Base.promote_op(f, NTuple{4,UInt64}) === Union{}
+            f(ntuple(_ -> UInt64(0), Val(4)))
+        end
+        return f(_draw_seeds(rng, home))
+    end
+    result = f(_draw_seeds(staged, home))
+    _commit_seed_draw!(rng, staged, home)
+    return result
 end
 
 # The compute unit on which an RNG generates numbers:

@@ -247,6 +247,7 @@ function _draw_scalar(f!::F, rng::KeyedRNG, ::Type{T}, cunit::AbstractComputeUni
     return _draw_scalar(f!, rng.rng, T, cunit)
 end
 _draw_seeds(rng::KeyedRNG, home::AbstractComputeUnit) = _draw_seeds(rng.rng, home)
+_with_seed_draw(f::F, rng::KeyedRNG, home::AbstractComputeUnit) where F = _with_seed_draw(f, rng.rng, home)
 
 # An RNG derived to replace a keyed one keeps its key:
 _keep_streamkey(::AbstractRNG, rng::AbstractRNG, ::AbstractComputeUnit) = rng
