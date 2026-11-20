@@ -121,7 +121,11 @@ KeyedRNG(rng::AbstractRNG, key::NTuple{4,UInt64}, ::CPUnit) = KeyedRNG(rng, key)
 has_rng_streamkey(::KeyedRNG) = true
 rng_streamkey(rng::KeyedRNG) = rng.streamkey
 
-# Moving a keyed RNG moves the wrapped RNG, the key stays:
+# Device moves follow the same ownership and seeding rules as context moves.
+function Adapt.adapt_structure(to::Union{AbstractComputeUnit,AbstractDevice}, rng::KeyedRNG)
+    return get_rng(adapt(to, GenContext(rng)))
+end
+
 function Adapt.adapt_structure(to, rng::KeyedRNG)
     leaf = adapt(to, rng.rng)
     return leaf === rng.rng ? rng : KeyedRNG(leaf, rng.streamkey)

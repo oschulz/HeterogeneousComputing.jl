@@ -167,6 +167,11 @@ Adapt.@adapt_structure _ReactantBox
             @test @jit(((ctx, y) -> y .+ randn(ctx, size(y)))(ctx1, y1)) isa Reactant.ConcreteRArray{Float32,1}
             @test adapt(CPUnit(), ctx0) isa GenContext{Float32,CPUnit,Xoshiro}
             @test get_compute_unit(get_rng(adapt(u1, GenContext{Float32}(Xoshiro(1))))) == u1
+
+            root = rootrng(u0, 11)
+            moved = adapt(u1, root)
+            @test get_compute_unit(moved.rng.seed) == u1
+            @test rng_streamkey(moved) == rng_streamkey(root)
         end
     end
 
@@ -222,6 +227,11 @@ Adapt.@adapt_structure _ReactantBox
         on_host = adapt(CPUnit(), child)
         @test get_rng(on_host) isa KeyedRNG{Xoshiro}
         @test rng_streamkey(get_rng(on_host)) == rng_streamkey(get_rng(child))
+        host_a = adapt(CPUnit(), rootrng(cunit, 11))
+        host_b = adapt(CPUnit(), rootrng(cunit, 22))
+        expected = copy(host_b)
+        rand(host_a, 8)
+        @test rand(host_b, 8) == rand(expected, 8)
         moved = adapt(cunit, subcontext(GenContext(rootrng(42)), :chain, 1))
         @test get_rng(rootcontext(GenContext{Float32}(cunit))) isa KeyedRNG{<:Reactant.ReactantRNG}
         @test get_rng(moved) isa KeyedRNG{<:Reactant.ReactantRNG}
