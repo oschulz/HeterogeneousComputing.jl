@@ -17,7 +17,12 @@ Test.@testset "Package HeterogeneousComputing" begin
     test_reactant =
         Sys.islinux() && Sys.ARCH in (:x86_64, :aarch64) && isempty(VERSION.prerelease) &&
         VERSION >= v"1.11"
-    if test_reactant
+    if Sys.islinux() && Sys.ARCH === :i686
+        # The PoCL backend in KernelAbstractions 0.10 cannot compile its
+        # runtime on i686 (JuliaGPU/GPUCompiler.jl#1085).
+        import Pkg
+        Pkg.add(name = "KernelAbstractions", version = "0.9")
+    elseif test_reactant
         import Pkg
         if Base.identify_package("Reactant") === nothing
             Pkg.add("Reactant"; allow_autoprecomp = false)

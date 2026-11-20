@@ -118,6 +118,8 @@ ka_backend = KernelAbstractions.Backend(gpu_unit)
 
 This way, KernelAbstractions backends don't need to be tracked independently through an application.
 
+On 32-bit x86 Linux, use JLArrays 0.4 with KernelAbstractions 0.9. The PoCL backend in KernelAbstractions 0.10 is affected by [GPUCompiler's 32-bit runtime issue](https://github.com/JuliaGPU/GPUCompiler.jl/issues/1085).
+
 # Migrating from 0.2 to 0.3
 
 Unit discovery in 0.3 skips existing two-argument methods such as `get_compute_unit_impl(::Type, x::MyBuffer)`. Define [`HeterogeneousComputing.get_compute_unit_impl`](@ref) for the value alone and return its compute unit. For a buffer that stores its MLDataDevices device, use
