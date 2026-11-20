@@ -39,6 +39,11 @@ mutable struct _TestOptionalStep
     step::Union{Nothing,Int}
 end
 
+mutable struct _LinkedRNG <: AbstractRNG
+    data::Vector{Float64}
+    link::Any
+end
+
 
 @testset "compute_unit" begin
     @testset "CPUnit" begin
@@ -165,6 +170,13 @@ end
         @test visits[] == 1
         leaf[] = leaf
         @test get_compute_unit(siblings) === ComputeUnitIndependent()
+
+        raw = _LinkedRNG([1.0], nothing)
+        keyed = KeyedRNG(raw, ntuple(UInt64, 4))
+        raw.link = keyed
+        @test get_compute_unit(raw) === CPUnit()
+        @test get_compute_unit(keyed) === CPUnit()
+        @test @inferred(get_compute_unit(KeyedRNG(Xoshiro(1), rng_streamkey(keyed)))) === ComputeUnitIndependent()
     end
 
     @testset "merge_compute_units" begin
