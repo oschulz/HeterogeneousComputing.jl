@@ -6,6 +6,10 @@ using Test
 using Random
 using StructArrays
 
+struct _PrecisionTree
+    children::Vector{_PrecisionTree}
+    value::Float32
+end
 
 @testset "precision" begin
     data = gen_testdata()
@@ -23,6 +27,8 @@ using StructArrays
     @test get_precision((a = Real[1], b = rand(Float32, 2))) == Float32
     @test get_precision(Ref{Union{Nothing,Float32}}(nothing)) ==
           HeterogeneousComputing.NoPrecision{Union{Nothing,Float32}}
+    @test get_precision_fromtype(_PrecisionTree) === Float32
+    @test @inferred(get_gencontext(Int)) === HeterogeneousComputing.NoGenContext(Int)
 
     # @test @inferred(get_precision(data)) == Float32
     @test get_precision(data) == Float32
