@@ -204,7 +204,14 @@ end
 # to the array:
 _fill_random!(f!::F, rng::AbstractRNG, A::AbstractArray) where {F} = _fill_random_array!(f!, rng, A)
 
-_fill_random_array!(f!::F, rng::AbstractRNG, A::AbstractArray) where {F} = f!(rng, A)
+function _fill_random_array!(f!::F, rng::AbstractRNG, A::AbstractArray) where {F}
+    if !(A isa GPUArraysCore.AnyGPUArray) && Adapt.unwrap_type(typeof(A)) <: GPUArraysCore.AbstractGPUArray
+        # Native fills recognize only one layer of device array wrappers.
+        tmp = similar(A, eltype(A), size(A))
+        return A .= _fill_random_array!(f!, rng, tmp)
+    end
+    return f!(rng, A)
+end
 # GPU RNGs provide no exponential variates:
 function _fill_random_array!(::typeof(Random.randexp!), rng::AbstractRNG, A::GPUArraysCore.AnyGPUArray)
     eltype(A) <: AbstractFloat || throw(ArgumentError("Exponential draws require a floating-point destination"))

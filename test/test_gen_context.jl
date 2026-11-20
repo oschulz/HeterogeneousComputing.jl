@@ -81,6 +81,16 @@ using Adapt: adapt
         @test randexp!(jl_ctx, view(A, 1:2:5)) isa SubArray
         @test all(x -> 0 <= x < Inf, Array(A)[1:2:5])
 
+        seeded() = GenContext{Float32}(jl_unit, rootrng(jl_unit, 8))
+        for (draw, draw!) in ((rand, rand!), (randn, randn!), (randexp, randexp!))
+            parent = JLArray(fill(-1.0f0, 8, 8))
+            dest = PermutedDimsArray(view(parent, 1:2:7, 1:2:7), (2, 1))
+            expected = fill(-1.0f0, 8, 8)
+            expected[1:2:7, 1:2:7] .= permutedims(Array(draw(seeded(), size(dest))))
+            @test draw!(seeded(), dest) === dest
+            @test Array(parent) == expected
+        end
+
         # A rounded unit exponential has P(X = 0) ≈ 2^-25 and P(X > 8) ≈ exp(-8).
         for rng in (rootrng(jl_unit, 19), Xoshiro(19))
             E = Array(randexp(GenContext{Float16}(jl_unit, rng), 2^16))
