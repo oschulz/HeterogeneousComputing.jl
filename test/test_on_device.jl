@@ -20,6 +20,15 @@ using JLArrays: JLArray, JLBackend
     # Arguments on different compute units:
     @test_throws ArgumentError g(x, JLArray(y))
 
+    calls = Ref(0)
+    unknown, other = _UnknownUnitRNG(), JLArray(y)
+    counted = on_device((args...) -> (calls[] += 1), CPUnit(), x, other, unknown)
+    for args in ((x, other, unknown), (unknown, x, other), (x, unknown, other))
+        @test_throws ArgumentError counted(args...)
+    end
+    @test iszero(calls[])
+    @test counted(unknown, x, x) == 1
+
     h = on_device(f, CPUnit(), dummy_x, dummy_y)
     @test h(x, y) ≈ f(x, y)
 
