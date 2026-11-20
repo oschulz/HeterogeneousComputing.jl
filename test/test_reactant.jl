@@ -132,6 +132,16 @@ Adapt.@adapt_structure _ReactantBox
             @test get_compute_unit(adapt(us, rand(4))) == us
             ctx_s = GenContext{Float32}(us)
             @test get_compute_unit(get_rng(ctx_s)) == us
+            mesh_unit(ds, axes) =
+                DeviceUnit(reactant_device(; sharding = Reactant.Sharding.Replicated(Reactant.Sharding.Mesh(ds, axes))))
+            @test us != mesh_unit(reverse(devs[1:2]), (:x,))
+            @test mesh_unit(reshape(devs[1:2], 1, 2), (:x, :y)) != mesh_unit(reshape(devs[1:2], 2, 1), (:x, :y))
+            renamed = mesh_unit(devs[1:2], (:y,))
+            moved = fill_array(adapt(renamed, ctx_s), 2.0f0, 4)
+            @test get_device(get_compute_unit(moved)).sharding.mesh.axis_names == (:y,)
+            @test_throws ArgumentError DeviceUnit(get_device((s, moved)))
+            replicated = allocate_array(us, Float32, 4)
+            @test DeviceUnit(get_device((s, replicated))) == us
             sy = Reactant.to_rarray(rand(Float32, 4); sharding = Reactant.Sharding.NamedSharding(mesh, (:x,)))
             @test @jit(((ctx, y) -> y .+ randn(ctx, size(y)))(ctx_s, sy)) isa Reactant.ConcreteRArray{Float32,1}
 

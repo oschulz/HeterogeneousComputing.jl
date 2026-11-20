@@ -57,11 +57,13 @@ _mesh_sharding(::Missing) = missing
 _mesh_sharding(::Sharding.NoSharding) = missing
 _mesh_sharding(sharding::Sharding.AbstractSharding) = Sharding.Replicated(sharding.mesh)
 
+_mesh_topology(mesh::Sharding.Mesh) = (mesh.device_ids, mesh.logical_device_ids, mesh.axis_names, size(mesh))
+
 # MLDataDevices records the sharding of each array separately:
 function _mesh_sharding(shardings::IdDict)
     mesh_shardings = filter(!ismissing, map(_mesh_sharding, collect(values(shardings))))
     isempty(mesh_shardings) && return missing
-    allequal(s.mesh.device_ids for s in mesh_shardings) ||
+    allequal(_mesh_topology(s.mesh) for s in mesh_shardings) ||
         throw(ArgumentError("Arrays are sharded over different device meshes"))
     return first(mesh_shardings)
 end
@@ -92,7 +94,7 @@ _location_id(device::XLA.AbstractDevice) = device.device
 
 _same_mesh(::Missing, ::Missing) = true
 _same_mesh(::Sharding.NoSharding, ::Sharding.NoSharding) = true
-_same_mesh(a::Sharding.Replicated, b::Sharding.Replicated) = a.mesh.device_ids == b.mesh.device_ids
+_same_mesh(a::Sharding.Replicated, b::Sharding.Replicated) = _mesh_topology(a.mesh) == _mesh_topology(b.mesh)
 _same_mesh(::Any, ::Any) = false
 
 function compute_unit_mergerule(a::ReactantUnit, b::ReactantUnit)
