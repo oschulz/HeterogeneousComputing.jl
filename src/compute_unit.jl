@@ -235,6 +235,8 @@ devices and units derived from data via [`get_compute_unit`](@ref) are equal:
 The unit has no element type (`adapt(cunit, x)` preserves numerical precision,
 use a [`GenContext`](@ref) to specify precision), and a device that refers to
 the currently active device (e.g. `CUDADevice()`) is resolved to that device.
+OpenCL units retain the allocation's context. Transfers between OpenCL
+contexts stage the array on the host.
 Reactant units keep the device mesh of sharded arrays, but not how individual
 arrays are partitioned over it, and no number tracking settings. Like element
 types, these are policies for moving data, not properties of a compute unit.
