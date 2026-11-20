@@ -52,6 +52,11 @@ Adapt.@adapt_structure _ReactantBox
     host_fill = fill_array(GenContext{Float32}(), value, 3)
     @test host_fill isa Vector{Float32} && host_fill == fill(2.25f0, 3)
 
+    empty_fill(ctx, x) = fill_array(ctx, sum(x), (0, 3))
+    for filled in (empty_fill(ctx, x), @jit(empty_fill(ctx, x)))
+        @test size(filled) == (0, 3) && eltype(filled) === Float32 && get_compute_unit(filled) == cunit
+    end
+
     # Units derived within compiled code don't specify the device, but merge
     # with units that do:
     function _partial_unit_merges(partial, concrete)
