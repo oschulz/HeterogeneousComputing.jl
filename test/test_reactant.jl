@@ -132,6 +132,10 @@ Adapt.@adapt_structure _ReactantBox
             # stay on the target unit:
             ones_on_u1 = on_device(() -> fill_array(u1, 1.0f0, 3), u1)
             @test get_compute_unit(ones_on_u1()) == u1
+            @test Reactant.XLA.device(ones_on_u1.f_device()) == devs[2]
+            mesh_fill = on_device(n -> fill_array(us, 1.0f0, n), us, 3)
+            @test Reactant.XLA.num_devices(mesh_fill.f_device.exec) == 2
+            @test Array(mesh_fill(3)) == ones(Float32, 3)
             @test get_compute_unit(adapt(us, rand(4))) == us
             ctx_s = GenContext{Float32}(us)
             @test get_compute_unit(get_rng(ctx_s)) == us

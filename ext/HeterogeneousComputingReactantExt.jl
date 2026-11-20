@@ -239,11 +239,22 @@ function Reactant.Compiler.create_result(
     return Meta.quot(tocopy)
 end
 
-# Reactant compiles for the device of the arguments, or for the default
-# device of the client if the arguments don't have one:
+# Reactant traces captured arrays as operands and infers execution placement
+# from them, even when the callback itself doesn't use the array.
+function _with_placement(f, placement)
+    return (args...) -> begin
+        placement
+        return f(args...)
+    end
+end
+
 function HeterogeneousComputing.on_device(f, cunit::ReactantUnit, dummy_args::Vararg{Any,N}) where {N}
     f_device, args_device = adapt(cunit, (f, dummy_args))
-    f_compiled = compile(f_device, args_device; client = get_device(cunit).client)
+    dev = get_device(cunit)
+    if !any(x -> x isa _ConcreteTypes, args_device) && dev.device != XLA.default_device(dev.client)
+        f_device = _with_placement(f_device, allocate_array(cunit, UInt8, 0))
+    end
+    f_compiled = compile(f_device, args_device; client = dev.client)
     # Reactant-compiled functions are probably not thread-safe:
     lock = ReentrantLock()
     return _OnDevice{N}(f_compiled, cunit, lock)
