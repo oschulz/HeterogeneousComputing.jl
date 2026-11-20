@@ -2,54 +2,107 @@
 
 HeterogeneousComputing.jl provides tools to ease heterogeneous computing in Julia.
 
-Currently only CPU and CUDA units are supports, support for AMDGPU, oneAPI and Metal will be added as well.
-
 The package provides [`AbstractComputeUnit`](@ref) and [`GenContext`](@ref) which allow for determining which compute unit given content is currently located on, moving it to other compute units, and generating new data on specific compute units.
 
-The idea is that a `AbstractComputeUnit` or an `AbstractComputeUnit` (which compines a compute unit with a random number generator and a desired numerical precision) can be passed around and propagate through an application, so that the computational context is always available.
+Compute units are based on [MLDataDevices](https://github.com/LuxDL/MLDataDevices.jl) devices, so CPUs, CUDA, AMDGPU, Metal, oneAPI and OpenCL GPUs and [Reactant](https://github.com/EnzymeAD/Reactant.jl) are supported. [JLArrays](https://github.com/JuliaGPU/GPUArrays.jl/tree/master/lib/JLArrays) are supported as well, for testing GPU code paths without a GPU.
+
+The idea is that an `AbstractComputeUnit` or a `GenContext` (which combines a compute unit with a random number generator and a desired numerical precision) can be passed around and propagate through an application, so that the computational context is always available.
 
 Example:
 
 ```julia
 using HeterogeneousComputing
-using Random, Adapt, CUDA, StructArrays, Tables
+using Random, Adapt, CUDA, MLDataDevices, StructArrays, Tables
 
-# Generate some data on a GPU:
+# Generate some data on the CPU:
 cpu_data = StructArray((
     a = rand(Float32, 1000),
     b = rand(Float32, 1000),
 ))
 
-# Verify data is on GPU:
+# Verify data is on the CPU:
 cpu_unit = CPUnit()
 get_compute_unit(cpu_data) == cpu_unit
 
 # Get compute unit for the current CUDA device:
-gpu_unit = AbstractComputeUnit(CUDA.device())
+gpu_unit = AbstractComputeUnit(CUDADevice())
 
 # Move the data to the GPU:
-
 gpu_data = adapt(gpu_unit, cpu_data)
+get_compute_unit(gpu_data) == gpu_unit
 
-# Specify a context for content generation.
-
+# Specify a context for content generation, it uses the default random
+# number generator of the compute unit:
 gpu_ctx = GenContext{Float32}(gpu_unit)
 
-# Generate a new data column on the GPU and add it to the data. A context
-# can also be used directly for random number generation, so we can
-# generate random data of the desired numerical precision on the desired
-# compute unit very conventiently:
+# Generate new data columns on the GPU and add them to the data. A context
+# can be used directly for random number generation, so we can generate
+# random data of the desired numerical precision on the desired compute unit
+# very conveniently:
+c = rand!(gpu_ctx, allocate_array(gpu_ctx, 1000))
+d = randn(gpu_ctx, 1000)
 
-c = rand!(allocate_array(gpu_ctx, 1000))
-d = rand(gpu_ctx, 1000)
-
-new_gpu_data = new_gpu_data = StructArray(
-    merge(Tables.columns(gpu_data), (c = c, d = c))
-)
+new_gpu_data = StructArray(merge(Tables.columns(gpu_data), (c = c, d = d)))
 
 # Move the data back to the CPU:
-
 new_cpu_data = adapt(cpu_unit, new_gpu_data)
+```
+
+Moving data to a compute unit via `adapt` never changes its numerical precision, the precision of generated content is specified by the `GenContext`.
+
+# Reproducible random streams
+
+Random numbers drawn from an ordinary RNG depend on everything drawn from it before. That makes results hard to reproduce when parts of a computation run in parallel, or when an inner algorithm consumes an unknown number of random values. Keyed RNGs avoid this: they identify their random stream by a 256-bit stream key that drawing never changes, and child streams are derived from the key and an id rather than from the state.
+
+[`rootrng`](@ref) creates a keyed RNG from a seed (or from an entropy source), [`subrng`](@ref) derives children from it:
+
+```julia
+using HeterogeneousComputing, Random
+
+root = rootrng(42)
+chain = subrng(root, :chain, 3)
+proposal = subrng(chain, :proposal, 17)
+
+randn(proposal, 5)
+```
+
+The key of `proposal` depends only on the seed and on the ids along the way, so the same numbers come out no matter how many values were drawn from `root` or `chain` before, in which order siblings were derived, or on which thread. The same ids always yield the same stream, so algorithms that run repeatedly need an id, like a step number, that tells the runs apart.
+
+Keyed RNGs implement `AbstractRNG` and draw with the generator of their compute unit. The available operations depend on that generator. For example, a GPUArrays generator supports uniform and normal array draws. For exponential draws on that device, pass the keyed RNG to a [`GenContext`](@ref) and use `randexp(ctx, dims)`.
+
+If the state words derived from two distinct stream keys are modeled as independent and uniform, the probability of identical initial states is about `2^-256` for CPU Xoshiro and `2^-128` for GPUArrays Philox. GPUArrays uses a 64-bit Philox key and a 64-bit call counter that advances once per nonempty fill. For two runs of `L ≥ 1` consecutive nonempty fills each, the probability of using a common key and call counter is `min(2^64, 2L - 1) / 2^128` under this model.
+
+A `GenContext` takes a keyed RNG like any other RNG. [`rootcontext`](@ref) turns a context into one with a keyed RNG, whose key is drawn from the RNG of the context, [`subcontext`](@ref) derives child contexts, and `adapt` keeps the key when a context moves to another compute unit:
+
+```jldoctest; setup = :(begin using HeterogeneousComputing, JLArrays; gpu_unit = AbstractComputeUnit(JLBackend()) end)
+step_id, n, k = 17, 3, 2
+ctx = rootcontext(GenContext{Float32}(gpu_unit))
+step_ctx = subcontext(ctx, :proposal, step_id)
+draws = randn(step_ctx, (n, k))
+size(draws), eltype(draws), get_compute_unit(draws) == gpu_unit
+
+# output
+
+((3, 2), Float32, true)
+```
+
+For a context whose key derives from a seed, use `GenContext{Float32}(gpu_unit, rootrng(gpu_unit, 42))`.
+
+On Reactant, keyed RNGs and contexts are created on the host and passed into compiled code, like other RNGs. Compiled code draws from the wrapped RNG and doesn't see the key, so RNGs can't be derived there, and an RNG that compiled code returns has no key.
+
+# Reactant
+
+Within code compiled by Reactant, [`allocate_array`](@ref) returns traced arrays and random numbers are generated by the random number generator of the context. That generator must be passed into the compiled function (e.g. as part of a `GenContext` argument), so that its state advances across calls:
+
+```julia
+using HeterogeneousComputing, Reactant, MLDataDevices
+
+ctx = GenContext{Float32}(ReactantDevice())
+f(ctx, x) = x .+ randn(ctx, size(x))
+
+x = Reactant.to_rarray(rand(Float32, 10))
+f_compiled = @compile f(ctx, x)
+f_compiled(ctx, x)
 ```
 
 # Support for KernelAbstractions
@@ -63,4 +116,29 @@ using KernelAbstractions
 ka_backend = KernelAbstractions.Backend(gpu_unit)
 ```
 
-This way, KernelAbstractions backends don't need to be tracked independently through a an application.
+This way, KernelAbstractions backends don't need to be tracked independently through an application.
+
+On 32-bit x86 Linux, use JLArrays 0.4 with KernelAbstractions 0.9. The PoCL backend in KernelAbstractions 0.10 is affected by [GPUCompiler's 32-bit runtime issue](https://github.com/JuliaGPU/GPUCompiler.jl/issues/1085).
+
+# Migrating from 0.2 to 0.3
+
+Unit discovery in 0.3 skips existing two-argument methods such as `get_compute_unit_impl(::Type, x::MyBuffer)`. Define [`HeterogeneousComputing.get_compute_unit_impl`](@ref) for the value alone and return its compute unit. For a buffer that stores its MLDataDevices device, use
+
+```julia
+HeterogeneousComputing.get_compute_unit_impl(x::MyBuffer) = DeviceUnit(x.device)
+```
+
+Use [`DeviceUnit(dev)`](@ref DeviceUnit) to wrap an MLDataDevices device. For example, replace the old `CUDAUnit` constructor for a given `CUDA.CuDevice` with `DeviceUnit(CUDADevice(dev))`. For code that used `AbstractComputeAccelerator` or `AbstractGPUnit` to choose a host implementation, use [`is_host_unit(unit)`](@ref is_host_unit). Obtain the kernel backend with `KernelAbstractions.Backend(unit)` in place of version-specific calls such as `CUDA.CUDABackend(unit)` or `convert(KernelAbstractions.GPU, unit)`.
+
+For a custom compute unit, `GenContext{T}(unit)` calls `MLDataDevices.default_device_rng(unit)`. Define that method for your unit type or pass a suitable RNG explicitly with `GenContext{T}(unit, rng)`.
+
+The device overload of [`on_device`](@ref) no longer applies the device's element-type preference to its arguments. Convert explicitly when a computation requires a particular precision.
+
+```julia
+using HeterogeneousComputing, MLDataDevices
+
+x = [1.0, 2.0]
+dev = cpu_device(Float32)
+on_device(eltype, dev, x)(x)                  # Float64
+on_device(x -> sum(Float32.(x)), dev, x)(x)   # 3.0f0
+```
