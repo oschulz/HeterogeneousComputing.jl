@@ -37,15 +37,19 @@ otherwise.
 `get_precision(ctx)`, `get_compute_unit(ctx)` and `get_rng(ctx)` return the
 precision, compute unit and random number generator of the context.
 
-`rand(ctx, dims)`, `randn(ctx, dims)` and `randexp(ctx, dims)` generate arrays
-of random numbers with precision `T` on the compute unit of `ctx`,
+`rand(ctx, dims)`, `randn(ctx, dims)` and `randexp(ctx, dims)` allocate arrays
+with precision `T` on the compute unit of `ctx` and fill them using its RNG.
 `rand!(ctx, A)`, `randn!(ctx, A)` and `randexp!(ctx, A)` fill `A` (which
 should reside on the compute unit of `ctx`) with random numbers.
 
-`adapt(cunit, ctx)` moves a context to the compute unit `cunit`. The random
-number generator stays if it is native to `cunit`, otherwise a new generator
-native to `cunit` is created, seeded with random numbers drawn from the old
-one. A stream key of the generator (see [`rng_streamkey`](@ref)) stays.
+`GenContext{T}(cunit, rng)` uses the supplied `rng`. With a host RNG and a
+GPU destination, the backend may generate values on the host and copy them
+to the GPU. Use `GenContext{T}(cunit)` for the unit's native default RNG.
+
+`adapt(cunit, ctx)` returns `ctx` when it already targets `cunit`. A move
+to another unit keeps the RNG if it is native to the new unit. Otherwise it
+creates a native generator seeded with random numbers drawn from the old one.
+A stream key of the generator (see [`rng_streamkey`](@ref)) stays.
 A destination construction error preserves the state of a copyable source
 RNG. Opaque native generators, such as cuRAND library RNGs, can advance if
 the destination fails after receiving the seed.
