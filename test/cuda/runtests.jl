@@ -104,5 +104,14 @@ CUDA.allowscalar(false)
             @test CUDA.device(randn(rng, (4, 2))) == other
             @test AbstractComputeUnit(CUDA.device()) == cunit
         end
+
+        function moved_draw(active, advance_source)
+            source = GenContext{Float32}(cunit, rootrng(cunit, 42).rng)
+            moved = CUDA.device!(() -> adapt(other_unit, source), active)
+            advance_source && rand(source, 8)
+            return Array(rand(moved, 8))
+        end
+        expected = moved_draw(CUDA.device(), false)
+        @test moved_draw(other, false) == moved_draw(other, true) == expected
     end
 end

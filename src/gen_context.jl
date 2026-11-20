@@ -132,7 +132,10 @@ get_rng(ctx::GenContext) = ctx.rng
 function Adapt.adapt_structure(to, ctx::GenContext{T}) where T
     cunit = _adapted_cunit(_adapt_target(to), ctx.cunit)
     cunit == ctx.cunit && return ctx
-    rng = _rng_native_to(get_compute_unit(ctx.rng), cunit) ? ctx.rng : _derived_rng(ctx, cunit)
+    # Some RNGs report the active device of their backend as their home.
+    rng = _within_unit(ctx.cunit) do
+        return _rng_native_to(get_compute_unit(ctx.rng), cunit) ? ctx.rng : _derived_rng(ctx, cunit)
+    end
     return GenContext{T}(cunit, rng)
 end
 
