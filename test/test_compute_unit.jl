@@ -20,6 +20,14 @@ HeterogeneousComputing.get_compute_unit_impl(::_TestHandle{2}) = AbstractCompute
 primitive type _PrimitiveHandle 8 end
 HeterogeneousComputing.get_compute_unit_impl(::_PrimitiveHandle) = CPUnit()
 
+struct _CountingHandle
+    visits::Base.RefValue{Int}
+end
+function HeterogeneousComputing.get_compute_unit_impl(handle::_CountingHandle)
+    handle.visits[] += 1
+    return CPUnit()
+end
+
 mutable struct _TestNode
     data::Vector{Float64}
     next::_TestNode
@@ -149,6 +157,14 @@ end
         b.next = a
         @test get_compute_unit(a) === CPUnit()
         @test get_compute_unit([a]) === CPUnit()
+
+        visits = Ref(0)
+        leaf = Ref{Any}(_CountingHandle(visits))
+        siblings = (leaf, leaf)
+        @test get_compute_unit(siblings) === CPUnit()
+        @test visits[] == 1
+        leaf[] = leaf
+        @test get_compute_unit(siblings) === ComputeUnitIndependent()
     end
 
     @testset "merge_compute_units" begin

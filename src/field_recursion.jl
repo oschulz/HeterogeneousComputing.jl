@@ -3,8 +3,7 @@
 # Field recursion of `get_compute_unit`. Included last, since generated
 # functions only see code defined before them.
 
-# `visited` is `nothing` or a `Base.IdSet` of visited objects that may be part of
-# reference loops:
+# Sibling paths share an identity set, created when a possible loop is reached.
 @inline _get_cunit(x, visited) = _get_cunit_via(get_compute_unit_impl(x), x, visited)
 
 @inline _get_cunit_via(cunit, @nospecialize(x), @nospecialize(visited)) = cunit
@@ -26,6 +25,11 @@ function _fields_cunit_expr(@nospecialize(T::Type), xex, vex, depth::Int, budget
     # Reserve one field access per sibling, then share the remaining budget.
     child_budget = (budget - n) ÷ n
     body = Expr(:block)
+    if n > 1
+        shared = gensym(:visited)
+        push!(body.args, :($shared = _share_visited($vex)))
+        vex = shared
+    end
     cunit = gensym(:cunit)
     push!(body.args, :($cunit = ComputeUnitIndependent()))
     for i in 1:n
@@ -62,6 +66,7 @@ end
 end
 
 function _loop_fields_cunit(x, visited)
+    visited = _share_visited(visited)
     cunit = _loop_field_cunit(x, 1, visited)
     for i in 2:fieldcount(typeof(x))
         cunit = merge_compute_units(_loop_field_cunit(x, i, visited), cunit)
@@ -99,10 +104,15 @@ function _may_close_ref_loop(@nospecialize(T::Type))
     return false
 end
 
-struct _AlreadyVisited end
+_share_visited(visited) = visited
+_share_visited(::Nothing) = Ref{Base.IdSet{Any}}()
 
-_visit!(::Nothing, x) = _visit!(Base.IdSet{Any}(), x)
-_visit!(visited::Base.IdSet{Any}, x) = x in visited ? _AlreadyVisited() : push!(visited, x)
+_visit!(::Nothing, x) = push!(Base.IdSet{Any}(), x)
+_visit!(seen::Base.IdSet{Any}, x) = x in seen ? nothing : push!(seen, x)
+function _visit!(shared::Base.RefValue{Base.IdSet{Any}}, x)
+    isassigned(shared) || (shared[] = Base.IdSet{Any}())
+    return _visit!(shared[], x)
+end
 
 
 # The recursion through fields of concrete types is inlined into a single
@@ -112,7 +122,7 @@ _visit!(visited::Base.IdSet{Any}, x) = x in visited ? _AlreadyVisited() : push!(
     body = Expr(:block)
     if _may_close_ref_loop(x)
         push!(body.args, :(visited = _visit!(visited, x)))
-        push!(body.args, :(visited isa _AlreadyVisited && return ComputeUnitIndependent()))
+        push!(body.args, :(visited === nothing && return ComputeUnitIndependent()))
     end
     push!(body.args, _fields_cunit_expr(x, :x, :visited, 0))
     return body
