@@ -56,6 +56,18 @@ jobs:
       - uses: julia-actions/julia-runtest@v1
         with:
           coverage: ${{ matrix.version == '1' && matrix.os == 'ubuntu-latest' && matrix.arch == 'x64' }}
+      - name: Test Reactant with IFRT
+        if: ${{ matrix.version == '1' && matrix.os == 'ubuntu-latest' && matrix.arch == 'x64' }}
+        run: |
+          julia --color=yes -e '
+            using Pkg
+            Pkg.activate(temp = true)
+            write(joinpath(dirname(Base.active_project()), "LocalPreferences.toml"), "[Reactant]\nxla_runtime = \"IFRT\"\n")
+            Pkg.develop(path = pwd())
+            Pkg.add(["Adapt", "KernelAbstractions", "MLDataDevices", "Reactant"])
+            include("test/test_reactant.jl")
+            @assert Reactant.XLA.REACTANT_XLA_RUNTIME == "IFRT"
+            @assert length(Reactant.devices()) >= 2'
       - uses: julia-actions/julia-processcoverage@v1
         if: matrix.version == '1' && matrix.os == 'ubuntu-latest' && matrix.arch == 'x64'
       - uses: codecov/codecov-action@v7

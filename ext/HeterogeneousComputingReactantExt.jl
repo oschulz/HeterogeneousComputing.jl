@@ -21,6 +21,7 @@ import Random
 
 
 const ReactantUnit = DeviceUnit{<:ReactantDevice}
+const _IFRTSingleUnit = DeviceUnit{<:ReactantDevice{<:XLA.IFRT.Client,<:XLA.IFRT.Device}}
 
 const _ConcreteTypes = Union{
     Reactant.ConcretePJRTArray,Reactant.ConcretePJRTNumber,
@@ -101,16 +102,33 @@ function compute_unit_mergerule(a::ReactantUnit, b::ReactantUnit)
     return _is_partial(a.device) && !_is_partial(b.device) ? b : HeterogeneousComputing.NoCUnitMergeRule()
 end
 
+# IFRT's concrete constructors pass `nothing` to the sharding allocator even
+# for an explicit device. Supply that device to the ordinary unsharded allocator.
+struct _IFRTPlacement <: Sharding.AbstractSharding
+    device::XLA.IFRT.Device
+end
+
+Sharding.is_sharded(::_IFRTPlacement) = false
+(s::_IFRTPlacement)(client, _, data) = Sharding.NoSharding()(client, s.device, data)
+
+_allocation_device(cunit::ReactantUnit) = get_device(cunit)
+function _allocation_device(cunit::_IFRTSingleUnit)
+    dev = get_device(cunit)
+    return MLDataDevices.with_eltype(ReactantDevice(dev.client, dev.device, _IFRTPlacement(dev.device)), nothing)
+end
+
+Adapt.adapt_storage(cunit::ReactantUnit, x) = Adapt.adapt_storage(_allocation_device(cunit), x)
+
 # A new RNG created within compiled code would have a fixed seed:
 function MLDataDevices.default_device_rng(cunit::ReactantUnit)
     within_compile() && throw(ArgumentError("Random number generators for Reactant must be passed into compiled code"))
     # MLDataDevices.default_device_rng(::ReactantDevice) ignores client and device:
-    return adapt(get_device(cunit), Random.RandomDevice())
+    return adapt(cunit, Random.RandomDevice())
 end
 
 function _seeded_rng(cunit::ReactantUnit, seeds::NTuple{4,UInt64})
     within_compile() && throw(ArgumentError("Random number generators for Reactant must be passed into compiled code"))
-    return ReactantRNG(adapt(get_device(cunit), UInt64[seeds[1], seeds[2]]))
+    return ReactantRNG(adapt(cunit, UInt64[seeds[1], seeds[2]]))
 end
 
 _seeded_rng_like(::ReactantRNG, cunit::AbstractComputeUnit, seeds::NTuple{4,UInt64}) = _seeded_rng(cunit, seeds)
@@ -183,7 +201,7 @@ const _ConcreteNumbers = Union{Reactant.ConcretePJRTNumber,Reactant.ConcreteIFRT
 
 function Adapt.adapt_storage(cunit::ReactantUnit, x::_ConcreteNumbers)
     get_compute_unit(x) == cunit && return x
-    dev = get_device(cunit)
+    dev = _allocation_device(cunit)
     sharding = coalesce(dev.sharding, Sharding.NoSharding())
     return Reactant.ConcreteRNumber(Reactant.unwrapped_eltype(x)(x); client = dev.client, device = dev.device, sharding)
 end
@@ -195,7 +213,7 @@ function allocate_array(cunit::ReactantUnit, ::Type{T}, dims::Dims) where T
     if within_compile()
         return similar(TracedRArray{U}, dims)
     else
-        dev = get_device(cunit)
+        dev = _allocation_device(cunit)
         sharding = coalesce(dev.sharding, Sharding.NoSharding())
         return ConcreteRArray{U}(undef, dims; client = dev.client, device = dev.device, sharding)
     end

@@ -96,6 +96,8 @@ Adapt.@adapt_structure _ReactantBox
             u0 = DeviceUnit(reactant_device(; device = devs[1]))
             u1 = DeviceUnit(reactant_device(; device = devs[2]))
             @test u0 != u1
+            @test Reactant.XLA.device(allocate_array(u1, Float32, 3)) == devs[2]
+            @test Reactant.XLA.device(rootrng(u1, 42).rng.seed) == devs[2]
             @test u0 == get_compute_unit(Reactant.to_rarray(rand(2); device = devs[1]))
             # Unspecified clients and devices are resolved like Reactant does:
             @test DeviceUnit(ReactantDevice()) == u0
@@ -105,7 +107,8 @@ Adapt.@adapt_structure _ReactantBox
             mesh = Reactant.Sharding.Mesh(reshape(devs[1:2], 2), (:x,))
             s = Reactant.to_rarray(rand(4); sharding = Reactant.Sharding.NamedSharding(mesh, (:x,)))
             a0 = Reactant.to_rarray(rand(2); device = devs[1])
-            a1 = Reactant.to_rarray(rand(2); device = devs[2])
+            a1 = adapt(u1, rand(2))
+            @test Reactant.XLA.device(a1) == devs[2]
             @test get_compute_unit(s) != u0 && get_compute_unit(s) != u1
             @test get_compute_unit((a0, s, a1)) === MixedComputeSystem()
 
@@ -156,7 +159,7 @@ Adapt.@adapt_structure _ReactantBox
             @test Array(get_rng(ctx0).seed) != [1, 2]
             @test Array(get_rng(ctx1).seed) == Array(get_rng(adapt(u1, seeded_ctx0())).seed)
             @test Array(get_rng(adapt(u1, ctx0)).seed) != Array(get_rng(ctx1).seed)
-            y1 = Reactant.to_rarray(rand(Float32, 3); device = devs[2])
+            y1 = adapt(u1, rand(Float32, 3))
             @test @jit(((ctx, y) -> y .+ randn(ctx, size(y)))(ctx1, y1)) isa Reactant.ConcreteRArray{Float32,1}
             @test adapt(CPUnit(), ctx0) isa GenContext{Float32,CPUnit,Xoshiro}
             @test get_compute_unit(get_rng(adapt(u1, GenContext{Float32}(Xoshiro(1))))) == u1
