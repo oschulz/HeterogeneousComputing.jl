@@ -13,7 +13,10 @@
 const _max_inline_depth = 8
 
 function _fields_cunit_expr(@nospecialize(T::Type), xex, vex, depth::Int)
-    _is_primitive_data(T) && return :(ComputeUnitIndependent())
+    isprimitivetype(T) && return :(ComputeUnitIndependent())
+    # Keep homogeneous primitive tuples (e.g. static array data) compact,
+    # while allowing individual elements to have their own compute unit rules.
+    T <: Tuple && isprimitivetype(eltype(T)) && return :(_primitive_tuple_cunit($xex))
     # Types that may close reference loops need to be tracked:
     depth > 0 && _may_close_ref_loop(T) && return :(_get_fields_cunit($xex, $vex))
     body = Expr(:block)
@@ -46,10 +49,13 @@ function _field_cunit_expr(@nospecialize(FT::Type), f::Symbol, vex, depth::Int)
     end
 end
 
-# Primitive types and tuples of them (e.g. the data of static arrays) are
-# independent of compute units, so there's no need to generate code for
-# each element:
-_is_primitive_data(@nospecialize(T::Type)) = isprimitivetype(T) || (T <: Tuple && all(isprimitivetype, fieldtypes(T)))
+function _primitive_tuple_cunit(x)
+    cunit = get_compute_unit(first(x))
+    for i in 2:length(x)
+        cunit = merge_compute_units(get_compute_unit(x[i]), cunit)
+    end
+    return cunit
+end
 
 # Types with compute unit rules in HeterogeneousComputing itself, no need to
 # inline recursion code for them:

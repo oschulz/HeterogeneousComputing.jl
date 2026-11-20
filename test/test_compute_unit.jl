@@ -17,6 +17,9 @@ struct _TestHandle{unit_id} end
 HeterogeneousComputing.get_compute_unit_impl(::_TestHandle{1}) = CPUnit()
 HeterogeneousComputing.get_compute_unit_impl(::_TestHandle{2}) = AbstractComputeUnit(JLBackend())
 
+primitive type _PrimitiveHandle 8 end
+HeterogeneousComputing.get_compute_unit_impl(::_PrimitiveHandle) = CPUnit()
+
 mutable struct _TestNode
     data::Vector{Float64}
     next::_TestNode
@@ -102,6 +105,10 @@ end
         # Rules for isbits types apply within containers:
         @test @inferred(get_compute_unit((_TestHandle{1}(),))) === CPUnit()
         @test @inferred(get_compute_unit((a = _TestHandle{1}(), b = (2, _TestHandle{2}())))) === MixedComputeSystem()
+        handle = reinterpret(_PrimitiveHandle, 0x01)
+        @test @inferred(get_compute_unit(handle)) === CPUnit()
+        @test @inferred(get_compute_unit((handle, handle))) === CPUnit()
+        @test @inferred(get_compute_unit(((handle, 1),))) === CPUnit()
         @test get_compute_unit((GenContext(Xoshiro(1)), GenContext(AbstractComputeUnit(JLBackend()), Xoshiro(2)))) ===
               MixedComputeSystem()
         jl_ctx = GenContext(AbstractComputeUnit(JLBackend()))
