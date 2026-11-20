@@ -16,8 +16,11 @@ using MLDataDevices: get_device
 get_compute_unit_impl(::GPUArrays.RNG{AT}) where AT = _rng_cunit(get_device(AT))
 
 # The state of a GPUArrays.RNG is a seed and a call counter of 64 bits each:
-function _seeded_rng_like(rng::GPUArrays.RNG, ::AbstractComputeUnit, seeds::NTuple{4,UInt64})
-    return typeof(rng)(seeds[1], seeds[2])
+function _seeded_rng_like(::Type{GPUArrays.RNG{AT}}, ::AbstractComputeUnit, seeds::NTuple{4,UInt64}) where AT
+    return GPUArrays.RNG{AT}(seeds[1], seeds[2])
+end
+function _seeded_rng_like(rng::GPUArrays.RNG, cunit::AbstractComputeUnit, seeds::NTuple{4,UInt64})
+    return _seeded_rng_like(typeof(rng), cunit, seeds)
 end
 
 # GPUArrays.RNG supports neither `copy` nor `==`:

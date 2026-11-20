@@ -172,7 +172,13 @@ end
 
 # A new RNG of the same kind as the default RNG of `cunit`:
 function _seeded_rng(cunit::AbstractComputeUnit, seeds::NTuple{4,UInt64})
-    return _within_unit(() -> _seeded_rng_like(default_device_rng(cunit), cunit, seeds), cunit)
+    rng_type = Base.promote_op(default_device_rng, typeof(cunit))
+    return _within_unit(() -> _seeded_rng_like(rng_type, cunit, seeds), cunit)
+end
+
+# Use the actual default when its inferred type has no seeded constructor.
+function _seeded_rng_like(::Type, cunit::AbstractComputeUnit, seeds::NTuple{4,UInt64})
+    return _seeded_rng_like(default_device_rng(cunit), cunit, seeds)
 end
 
 function _seeded_rng_like(::Union{Random.TaskLocalRNG,Xoshiro}, ::AbstractComputeUnit, seeds::NTuple{4,UInt64})
