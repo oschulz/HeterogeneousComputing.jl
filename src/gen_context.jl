@@ -150,7 +150,7 @@ get_rng(ctx::GenContext) = ctx.rng
 # RNG stays if it is native to that unit, otherwise a native RNG is derived
 # from it:
 function Adapt.adapt_structure(to, ctx::GenContext{T}) where T
-    cunit = _adapted_cunit(_adapt_target(to), ctx.cunit)
+    cunit = _adapted_cunit(to, ctx.cunit)
     cunit == ctx.cunit && return ctx
     # Some RNGs report the active device of their backend as their home.
     rng = _within_unit(ctx.cunit) do
@@ -160,9 +160,7 @@ function Adapt.adapt_structure(to, ctx::GenContext{T}) where T
     return GenContext{T}(cunit, rng)
 end
 
-_adapt_target(dev::AbstractDevice) = DeviceUnit(dev)
-_adapt_target(@nospecialize(to)) = to
-
+_adapted_cunit(dev::AbstractDevice, ::AbstractComputeUnit) = DeviceUnit(dev)
 _adapted_cunit(to::AbstractComputeUnit, ::AbstractComputeUnit) = to
 _adapted_cunit(@nospecialize(to), cunit::AbstractComputeUnit) = cunit
 

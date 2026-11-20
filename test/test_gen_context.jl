@@ -92,6 +92,8 @@ end
         jl_unit = AbstractComputeUnit(JLBackend())
         jl_ctx = GenContext{Float32}(jl_unit)
         @test jl_ctx isa GenContext{Float32,typeof(jl_unit)}
+        @test @inferred(adapt(MLDataDevices.get_device(jl_unit), jl_ctx)) === jl_ctx
+        @test @inferred(adapt(Array, jl_ctx)) === jl_ctx
         @test GenContext{Float32}(get_rng(jl_ctx)) === jl_ctx
         @test get_gencontext(allocate_array(jl_ctx, 3)) isa GenContext{Float32,typeof(jl_unit)}
         test_gencontext_draws(jl_ctx)
