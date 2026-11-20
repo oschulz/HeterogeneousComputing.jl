@@ -93,4 +93,16 @@ CUDA.allowscalar(false)
     back = adapt(CPUnit(), GenContext{Float32}(cunit, kchild))
     @test get_rng(back) isa KeyedRNG{Xoshiro}
     @test rng_streamkey(get_rng(back)) == rng_streamkey(kchild)
+
+    if length(CUDA.devices()) >= 2
+        other = first(filter(!=(CUDA.device()), collect(CUDA.devices())))
+        other_unit = AbstractComputeUnit(other)
+        root = rootrng(other_unit, 42)
+        for rng in (root, subrng(root, :walker), copy(root))
+            @test get_compute_unit(rng) == other_unit
+            @test CUDA.device(rand(rng, Float32, 8)) == other
+            @test CUDA.device(randn(rng, (4, 2))) == other
+            @test AbstractComputeUnit(CUDA.device()) == cunit
+        end
+    end
 end

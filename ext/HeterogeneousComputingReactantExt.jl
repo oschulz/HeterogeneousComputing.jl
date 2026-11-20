@@ -150,7 +150,7 @@ Base.@nospecializeinfer function Reactant.traced_type_inner(
     @nospecialize(runtime)
 )
     R = Reactant.traced_type_inner(fieldtype(PT, :rng), seen, mode, track_numbers, ndevices, runtime)
-    return mode == Reactant.ArrayToConcrete ? KeyedRNG{R} : R
+    return mode == Reactant.ArrayToConcrete ? KeyedRNG{R,Nothing} : R
 end
 
 Base.@nospecializeinfer function Reactant.make_tracer(

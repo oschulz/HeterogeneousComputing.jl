@@ -92,7 +92,7 @@ export rootrng
 
 
 """
-    struct KeyedRNG{R<:AbstractRNG} <: AbstractRNG
+    struct KeyedRNG{R<:AbstractRNG,CU} <: AbstractRNG
 
 A random number generator with a stream key, see [`rng_streamkey`](@ref).
 
@@ -101,19 +101,29 @@ GPU arrays, and draws that allocate arrays of numbers, characters, tuples or
 pairs, go to the wrapped RNG unchanged, so they match its results. Other
 draws use `Random`'s generic algorithms on top of the wrapped
 RNG's scalar draws. `Random.seed!` reseeds the wrapped RNG, the key stays.
-Keyed RNGs are created with [`rootrng`](@ref) and [`subrng`](@ref).
+Roots and children on a device keep allocating there when another device
+becomes active. Keyed RNGs are created with [`rootrng`](@ref) and [`subrng`](@ref).
 """
-struct KeyedRNG{R<:AbstractRNG} <: AbstractRNG
+struct KeyedRNG{R<:AbstractRNG,CU<:Union{Nothing,AbstractComputeUnit}} <: AbstractRNG
     rng::R
     streamkey::NTuple{4,UInt64}
+    cunit::CU
 end
 export KeyedRNG
+
+KeyedRNG(rng::AbstractRNG, key::NTuple{4,UInt64}) = KeyedRNG(rng, key, nothing)
+KeyedRNG{R}(rng, key) where R = KeyedRNG{R,Nothing}(rng, key, nothing)
+# A host RNG keeps its usual compute-unit independence.
+KeyedRNG(rng::AbstractRNG, key::NTuple{4,UInt64}, ::CPUnit) = KeyedRNG(rng, key)
 
 has_rng_streamkey(::KeyedRNG) = true
 rng_streamkey(rng::KeyedRNG) = rng.streamkey
 
 # Moving a keyed RNG moves the wrapped RNG, the key stays:
-Adapt.adapt_structure(to, rng::KeyedRNG) = KeyedRNG(adapt(to, rng.rng), rng.streamkey)
+function Adapt.adapt_structure(to, rng::KeyedRNG)
+    leaf = adapt(to, rng.rng)
+    return leaf === rng.rng ? rng : KeyedRNG(leaf, rng.streamkey)
+end
 
 # Wrapped RNGs are copied, compared and hashed through these functions, so
 # extensions can support RNG types that can't do that themselves:
@@ -121,12 +131,17 @@ _copy_rng(rng::AbstractRNG) = copy(rng)
 _isequal_rng(a::AbstractRNG, b::AbstractRNG) = a == b
 _hash_rng(rng::AbstractRNG, h::UInt) = hash(rng, h)
 
-Base.copy(rng::KeyedRNG) = KeyedRNG(_copy_rng(rng.rng), rng.streamkey)
+Base.copy(rng::KeyedRNG) = KeyedRNG(_copy_rng(rng.rng), rng.streamkey, rng.cunit)
 Base.:(==)(a::KeyedRNG, b::KeyedRNG) = a.streamkey == b.streamkey && _isequal_rng(a.rng, b.rng)
 Base.hash(rng::KeyedRNG, h::UInt) = _hash_rng(rng.rng, hash(rng.streamkey, hash(:KeyedRNG, h)))
 
 function Base.show(io::IO, rng::KeyedRNG)
     return print(io, "KeyedRNG(", rng.rng, ", streamkey = ", rng.streamkey, ")")
+end
+
+_within_unit(f, ::Nothing) = f()
+function _keyed_draw(f::F, rng::KeyedRNG, args::Vararg{Any,N}) where {F,N}
+    return _within_unit(() -> f(rng.rng, args...), rng.cunit)
 end
 
 # Fills of dense host arrays (which Xoshiro fills in bulk) and of GPU arrays
@@ -147,11 +162,11 @@ const _NativeFloats = (Float16, Float32, Float64)
 
 for f! in (:rand!, :randn!, :randexp!)
     @eval function Random.$f!(rng::KeyedRNG, A::_DenseHostArray)
-        return Random.$f!(rng.rng, A)
+        return _keyed_draw(Random.$f!, rng, A)
     end
 end
 function Random.rand!(rng::KeyedRNG, A::_DenseHostArray, ::Type{X}) where {X}
-    return Random.rand!(rng.rng, A, X)
+    return _keyed_draw(Random.rand!, rng, A, X)
 end
 # Fills with the samplers that Xoshiro implements in bulk:
 for S in (
@@ -159,21 +174,21 @@ for S in (
     (Random.SamplerTrivial{Random.CloseOpen01{T}} for T in _NativeFloats)...
 )
     @eval function Random.rand!(rng::KeyedRNG, A::_DenseHostArray, sp::$S)
-        return Random.rand!(rng.rng, A, sp)
+        return _keyed_draw(Random.rand!, rng, A, sp)
     end
 end
 
 function Random.rand!(rng::KeyedRNG, A::GPUArraysCore.AnyGPUArray)
-    return Random.rand!(rng.rng, A)
+    return _keyed_draw(Random.rand!, rng, A)
 end
 function Random.randn!(
     rng::KeyedRNG,
     A::GPUArraysCore.AnyGPUArray{T}
 ) where {T<:Union{AbstractFloat,Complex{<:AbstractFloat}}}
-    return Random.randn!(rng.rng, A)
+    return _keyed_draw(Random.randn!, rng, A)
 end
 function Random.randexp!(rng::KeyedRNG, A::GPUArraysCore.AnyGPUArray)
-    return Random.randexp!(rng.rng, A)
+    return _keyed_draw(Random.randexp!, rng, A)
 end
 
 # Allocating draws go to the wrapped RNG as well, so GPU RNGs allocate on
@@ -184,16 +199,16 @@ const _ScalarElement = Union{Number,Char,Tuple,Pair}
 for f in (:rand, :randn, :randexp)
     @eval begin
         function Random.$f(rng::KeyedRNG, dims::Dims)
-            return Random.$f(rng.rng, dims)
+            return _keyed_draw(Random.$f, rng, dims)
         end
         function Random.$f(rng::KeyedRNG, d::Integer, dims::Integer...)
-            return Random.$f(rng.rng, d, dims...)
+            return _keyed_draw(Random.$f, rng, d, dims...)
         end
         function Random.$f(rng::KeyedRNG, ::Type{X}, dims::Dims) where {X<:_ScalarElement}
-            return Random.$f(rng.rng, X, dims)
+            return _keyed_draw(Random.$f, rng, X, dims)
         end
         function Random.$f(rng::KeyedRNG, ::Type{X}, d::Integer, dims::Integer...) where {X<:_ScalarElement}
-            return Random.$f(rng.rng, X, d, dims...)
+            return _keyed_draw(Random.$f, rng, X, d, dims...)
         end
     end
 end
@@ -212,11 +227,11 @@ for S in (
     Random.SamplerTrivial{Random.UInt104{UInt128}}
 )
     @eval function Random.rand(rng::KeyedRNG, sp::$S)
-        return Random.rand(rng.rng, sp)
+        return _keyed_draw(Random.rand, rng, sp)
     end
 end
 
-get_compute_unit_impl(rng::KeyedRNG) = get_compute_unit(rng.rng)
+get_compute_unit_impl(rng::KeyedRNG) = isnothing(rng.cunit) ? get_compute_unit(rng.rng) : rng.cunit
 
 function _fill_random!(f!::F, rng::KeyedRNG, A::AbstractArray) where {F}
     return _fill_random!(f!, rng.rng, A)
@@ -227,8 +242,8 @@ end
 _draw_seeds(rng::KeyedRNG, home::AbstractComputeUnit) = _draw_seeds(rng.rng, home)
 
 # An RNG derived to replace a keyed one keeps its key:
-_keep_streamkey(::AbstractRNG, rng::AbstractRNG) = rng
-_keep_streamkey(keyed::KeyedRNG, rng::AbstractRNG) = KeyedRNG(rng, keyed.streamkey)
+_keep_streamkey(::AbstractRNG, rng::AbstractRNG, ::AbstractComputeUnit) = rng
+_keep_streamkey(keyed::KeyedRNG, rng::AbstractRNG, cunit::AbstractComputeUnit) = KeyedRNG(rng, keyed.streamkey, cunit)
 
 # Key derivation. Threefry-4x64 serves as a pseudorandom function from a key
 # and a 256-bit counter block to a new key. The first counter word names the
@@ -285,13 +300,13 @@ _leaf_seeds(key::NTuple{4,UInt64}) = _derive_streamkey(key, (_STREAMKEY_LEAF, UI
 
 function subrng(rng::KeyedRNG, id, ids::Vararg{Any,N}) where N
     key = foldl(_child_streamkey, ids; init = _child_streamkey(rng.streamkey, id))
-    home = _rng_home(get_compute_unit(rng.rng), CPUnit())
+    home = _rng_home(get_compute_unit(rng), CPUnit())
     leaf = _within_unit(() -> _seeded_rng_like(rng.rng, home, _leaf_seeds(key)), home)
-    return KeyedRNG(leaf, key)
+    return KeyedRNG(leaf, key, rng.cunit)
 end
 
 function rootrng(cunit::AbstractComputeUnit, key::NTuple{4,UInt64})
-    return KeyedRNG(_seeded_rng(cunit, _leaf_seeds(key)), key)
+    return KeyedRNG(_seeded_rng(cunit, _leaf_seeds(key)), key, cunit)
 end
 rootrng(cunit::AbstractComputeUnit, seed::Integer) = rootrng(cunit, _seed_streamkey(seed))
 function rootrng(cunit::AbstractComputeUnit, entropy::AbstractRNG)

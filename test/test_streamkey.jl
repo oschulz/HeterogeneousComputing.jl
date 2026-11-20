@@ -175,24 +175,24 @@ using HeterogeneousComputing: _nonzero_xoshiro_state, _symbol_digest, _seeded_rn
 
     @testset "contexts" begin
         ctx = GenContext(rootrng(42))
-        @test ctx isa GenContext{Float64,CPUnit,KeyedRNG{Xoshiro}}
+        @test ctx isa GenContext{Float64,CPUnit,<:KeyedRNG{Xoshiro}}
         @test has_rng_streamkey(get_rng(ctx))
 
         # rootcontext keeps unit and precision and draws the key from the RNG
         # of the context, which advances:
         plain = GenContext{Float32}(Xoshiro(7))
         root = @inferred(rootcontext(plain))
-        @test root isa GenContext{Float32,CPUnit,KeyedRNG{Xoshiro}}
+        @test root isa GenContext{Float32,CPUnit,<:KeyedRNG{Xoshiro}}
         @test get_rng(root) == rootrng(Xoshiro(7))
         @test get_rng(plain) == (e = Xoshiro(7); rand(e, UInt32, 8); e)
         @test get_rng(rootcontext(plain)) != get_rng(root)
         @test get_rng(rootcontext(GenContext())) isa KeyedRNG{Xoshiro}
         @test rng_streamkey(get_rng(rootcontext(ctx))) != rng_streamkey(get_rng(ctx))
-        @test GenContext{Float32}(get_rng(ctx)) isa GenContext{Float32,CPUnit,KeyedRNG{Xoshiro}}
+        @test GenContext{Float32}(get_rng(ctx)) isa GenContext{Float32,CPUnit,<:KeyedRNG{Xoshiro}}
         @test get_compute_unit(get_rng(ctx)) === ComputeUnitIndependent()
 
         sub = @inferred(subcontext(ctx, :chain, 3))
-        @test sub isa GenContext{Float64,CPUnit,KeyedRNG{Xoshiro}}
+        @test sub isa GenContext{Float64,CPUnit,<:KeyedRNG{Xoshiro}}
         @test get_rng(sub) == subrng(get_rng(ctx), :chain, 3)
         @test get_precision(subcontext(GenContext{Float32}(CPUnit(), rootrng(1)), 1)) === Float32
         @test_throws ArgumentError subcontext(GenContext(), 1)

@@ -150,7 +150,7 @@ _rng_native_to(::Any, ::AbstractComputeUnit) = false
 # A new RNG native to `cunit`, seeded with random numbers drawn from the RNG
 # of `ctx`:
 function _derived_rng(ctx::GenContext, cunit::AbstractComputeUnit)
-    return _keep_streamkey(ctx.rng, _seeded_rng(cunit, _draw_seeds(ctx)))
+    return _keep_streamkey(ctx.rng, _seeded_rng(cunit, _draw_seeds(ctx)), cunit)
 end
 
 function _draw_seeds(ctx::GenContext)
