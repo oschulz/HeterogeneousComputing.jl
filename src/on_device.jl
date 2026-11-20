@@ -7,12 +7,15 @@
 Returns a function that runs `f` on the compute unit `cunit` (or the compute
 unit of `device`) with arguments like `dummy_args`.
 
-The resulting function only accepts the same kind and number of arguments as
-`dummy_args`. It adapts the arguments to `cunit` and the result back to the
+The resulting function takes the same number of arguments as `dummy_args`.
+Compiling backends such as Reactant can also specialize on argument types
+and array sizes. For those backends, call `on_device` again when the types
+or sizes change.
+
+The function adapts its arguments to `cunit` and the result back to the
 compute unit of the arguments, or leaves the result on `cunit` if the
 arguments aren't tied to any compute unit. Arguments on different compute
-units are not supported. Depending on the compute unit, `dummy_args` may or
-may not be used.
+units are not supported.
 
 Example:
 
