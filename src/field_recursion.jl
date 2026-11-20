@@ -62,7 +62,7 @@ end
 @inline function _loop_field_cunit(x, i, visited)
     ismutabletype(typeof(x)) && !isdefined(x, i) && return ComputeUnitIndependent()
     # The caller visits exactly 1:fieldcount(typeof(x)) on a nonempty record.
-    return _get_cunit(getfield(x, i, false), visited)
+    return _loop_value_cunit(getfield(x, i, false), visited)
 end
 
 function _loop_fields_cunit(x, visited)
@@ -126,4 +126,10 @@ end
     end
     push!(body.args, _fields_cunit_expr(x, :x, :visited, 0))
     return body
+end
+
+# Expand the element rule once for a wide record, so nested wrappers can be
+# inferred without unrolling the entire loop.
+@generated function _loop_value_cunit(x, visited)
+    return _field_cunit_expr(x, :x, :visited, 0, _max_inline_fields)
 end
