@@ -74,10 +74,16 @@ If the state words derived from two distinct stream keys are modeled as independ
 
 A `GenContext` takes a keyed RNG like any other RNG. [`rootcontext`](@ref) turns a context into one with a keyed RNG, whose key is drawn from the RNG of the context, [`subcontext`](@ref) derives child contexts, and `adapt` keeps the key when a context moves to another compute unit:
 
-```julia
+```jldoctest; setup = :(begin using HeterogeneousComputing, JLArrays; gpu_unit = AbstractComputeUnit(JLBackend()) end)
+step_id, n, k = 17, 3, 2
 ctx = rootcontext(GenContext{Float32}(gpu_unit))
-step_ctx = subcontext(ctx, :proposal, step)
-randn(step_ctx, (n, k))
+step_ctx = subcontext(ctx, :proposal, step_id)
+draws = randn(step_ctx, (n, k))
+size(draws), eltype(draws), get_compute_unit(draws) == gpu_unit
+
+# output
+
+((3, 2), Float32, true)
 ```
 
 For a context whose key derives from a seed, use `GenContext{Float32}(gpu_unit, rootrng(gpu_unit, 42))`.
