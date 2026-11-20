@@ -117,3 +117,26 @@ ka_backend = KernelAbstractions.Backend(gpu_unit)
 ```
 
 This way, KernelAbstractions backends don't need to be tracked independently through an application.
+
+# Migrating from 0.2 to 0.3
+
+Unit discovery in 0.3 skips existing two-argument methods such as `get_compute_unit_impl(::Type, x::MyBuffer)`. Define [`HeterogeneousComputing.get_compute_unit_impl`](@ref) for the value alone and return its compute unit. For a buffer that stores its MLDataDevices device, use
+
+```julia
+HeterogeneousComputing.get_compute_unit_impl(x::MyBuffer) = DeviceUnit(x.device)
+```
+
+Use [`DeviceUnit(dev)`](@ref DeviceUnit) to wrap an MLDataDevices device. For example, replace the old `CUDAUnit` constructor for a given `CUDA.CuDevice` with `DeviceUnit(CUDADevice(dev))`. For code that used `AbstractComputeAccelerator` or `AbstractGPUnit` to choose a host implementation, use [`is_host_unit(unit)`](@ref is_host_unit). Obtain the kernel backend with `KernelAbstractions.Backend(unit)` in place of version-specific calls such as `CUDA.CUDABackend(unit)` or `convert(KernelAbstractions.GPU, unit)`.
+
+For a custom compute unit, `GenContext{T}(unit)` calls `MLDataDevices.default_device_rng(unit)`. Define that method for your unit type or pass a suitable RNG explicitly with `GenContext{T}(unit, rng)`.
+
+The device overload of [`on_device`](@ref) no longer applies the device's element-type preference to its arguments. Convert explicitly when a computation requires a particular precision.
+
+```julia
+using HeterogeneousComputing, MLDataDevices
+
+x = [1.0, 2.0]
+dev = cpu_device(Float32)
+on_device(eltype, dev, x)(x)                  # Float64
+on_device(x -> sum(Float32.(x)), dev, x)(x)   # 3.0f0
+```
